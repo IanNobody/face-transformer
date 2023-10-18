@@ -35,6 +35,7 @@ MANIFEST
 # Installer logs
 pip-log.txt
 pip-delete-this-directory.txt
+Pipfile.lock
 
 # Unit test / coverage reports
 htmlcov/
@@ -151,6 +152,12 @@ dmypy.json
 
 # Cython debug symbols
 cython_debug/
+
+# PyCharm
+.idea/
+!.idea/vcs.xml
+!.idea/indexLayout.xml
+!.idea/runConfigurations
 
 # PyCharm
 #  JetBrains specific template is maintained in a separate JetBrains.gitignore that can
