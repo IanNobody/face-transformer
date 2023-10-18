@@ -38,6 +38,9 @@ class CelebADataset(Dataset):
         sample = {'image': image, 'entity': ann}
         return sample
 
+    def num_of_classes(self):
+        return len(self.ann.unique())
+
     @staticmethod
     def _try_clean(extract_path):
         if os.path.isfile(extract_path):
