@@ -1,27 +1,27 @@
 import numpy
 import torch
 
+
 class Metrics:
     def __init__(self, model, dataloader, config):
         self.model = model
         self.dataloader = dataloader
-        self.statistics = {}
         self.config = config
 
-    def _update_statistics(self, entity, embedding):
-        if entity not in self.statistics:
-            self.statistics[entity] = [embedding]
-        else:
-            self.statistics[entity].append(embedding)
-
-    def _run_statistics(self):
+    def pair_stats(self, accuracy):
         self.model.eval()
-        counter = 0
 
-        seen_classes = []
-        for data_sample in self.dataloader:
-            counter += 1
+        l_embed = []
+        l_entity = []
+        stats = {
+            "true_positive": 0,
+            "false_positive": 0,
+            "false_negative": 0,
+            "true_negative": 0,
+            "len": 0
+        }
 
+        for idx, data_sample in enumerate(self.dataloader):
             image = data_sample["image"]
             entity = data_sample["entity"]
 
@@ -31,111 +31,78 @@ class Metrics:
             if self.config.model_name == "dat":
                 out_embeddings = out_embeddings[0]
 
-            #out_embeddings = torch.nn.functional.normalize(out_embeddings, dim=1)
+            if idx % 2 == 0:
+                l_embed = out_embeddings
+                l_entity = entity
 
-            for idx, embedding in enumerate(out_embeddings):
-                if entity[idx].item() not in seen_classes:
-                    print(embedding)
-                    seen_classes.append(entity[idx].item())
-                self._update_statistics(entity[idx].item(), embedding.cpu().numpy())
+                if idx == len(self.dataloader) - 1:
+                    self._compare_asymmetric_batch(
+                        {"embed": l_embed.cpu(), "entity": l_entity.cpu()},
+                        stats,
+                        accuracy
+                    )
 
-            if counter > 200:
-              return
+            if idx % 2 == 1:
+                self._compare_batches(
+                    {"embed": l_embed.cpu(), "entity": l_entity.cpu()},
+                    {"embed": out_embeddings.cpu(), "entity": entity.cpu()},
+                    stats,
+                    accuracy
+                )
 
-    def _cluster_center(self, class_id):
-        matrix = numpy.asmatrix(self.statistics[class_id])
-        #print("Max matrix value: ", matrix.max())
-        argmax = matrix.argmax()
-        y = argmax // matrix.shape[1]
-        x = argmax % matrix.shape[1]
+            # if idx == 50:
+            #     break
 
-        #print("Where it is: x", x, "; y", y)
-        #print(self.statistics[class_id])
-        #print("Shape: ", matrix.shape)
-        #print("Correction: ", matrix[y][x])
-        return numpy.mean(matrix, axis=0).tolist()[0]
+        return stats
 
+    def _compare_asymmetric_batch(self, batch, stats, accuracy):
+        if len(batch["embed"]) % 2 != 0:
+            batch = {"embed": batch["embed"][:-1], "entity": batch["entity"][:-1]}
 
-    def _similarity(self, embedding1, embedding2):
+        half_idx = len(batch["embed"]) // 2
+
+        b1 = {"embed": batch["embed"][:half_idx], "entity": batch["entity"][:half_idx]}
+        b2 = {"embed": batch["embed"][half_idx:], "entity": batch["entity"][half_idx:]}
+        return self._compare_batches(b1, b2, stats, accuracy)
+
+    def _compare_batches(self, batch1, batch2, stats, accuracy):
+        if len(batch1["embed"]) == len(batch2["embed"]):
+            for idx in range(len(batch1["embed"])):
+                if self._similarity(batch1["embed"][idx], batch2["embed"][idx]) > accuracy:
+                    if batch1["entity"][idx] == batch2["entity"][idx]:
+                        print("Passed with similarity: ", self._similarity(batch1["embed"][idx], batch2["embed"][idx]))
+                        stats["true_positive"] += 1
+                    else:
+                        print("**** Falsely passed with similarity: ", self._similarity(batch1["embed"][idx], batch2["embed"][idx]))
+                        stats["false_positive"] += 1
+                else:
+                    if batch1["entity"][idx] == batch2["entity"][idx]:
+                        print("Failed with similarity: ", self._similarity(batch1["embed"][idx], batch2["embed"][idx]))
+                        stats["false_negative"] += 1
+                    else:
+                        stats["true_negative"] += 1
+            stats["len"] = len(batch1)
+        else:
+            bigger_batch = batch1 if len(batch1["embed"]) > len(batch2["embed"]) else batch2
+            smaller_batch = batch1 if len(batch1["embed"]) < len(batch2["embed"]) else batch2
+            size_difference = len(bigger_batch["embed"]) - len(smaller_batch["embed"])
+
+            trimmed_batch = {"embed": bigger_batch["embed"][:-size_difference], "entity": bigger_batch["entity"][:-size_difference]}
+            batch_reminder = {"embed": bigger_batch["embed"][-size_difference:], "entity": bigger_batch["entity"][-size_difference:]}
+            self._compare_batches(trimmed_batch, smaller_batch, stats, accuracy)
+            self._compare_asymmetric_batch(batch_reminder, stats, accuracy)
+
+    @staticmethod
+    def _similarity(embedding1, embedding2):
         embedding1_magnitude = numpy.linalg.norm(embedding1)
         embedding2_magnitude = numpy.linalg.norm(embedding2)
         cosine_similarity = numpy.dot(embedding1, embedding2) / (embedding1_magnitude * embedding2_magnitude)
         return cosine_similarity
 
-    def _flatten(self, l):
-        return [item for sublist in l for item in sublist]
-
-    def _test_metrics(self):
-        for class_label_a in self.statistics:
-            for class_label_b in self.statistics:
-                sum = 0
-
-                for embedding_a in self.statistics[class_label_a]:
-                    for embedding_b in self.statistics[class_label_b]:
-                        embedding_magnitude_a = numpy.linalg.norm(embedding_a)
-                        embedding_magnitude_b = numpy.linalg.norm(embedding_b)
-                        cosine_similarity = numpy.dot(embedding_a, embedding_b) / (
-                                embedding_magnitude_a * embedding_magnitude_b)
-                        sum += cosine_similarity
-
-                print("Class ", class_label_a, " and class ", class_label_b, " have similarity: ", sum / (len(self.statistics[class_label_a]) * len(self.statistics[class_label_b])))
-
-
-
-
-        # with torch.no_grad():
-        #     avg = 0
-        #
-        #     weights = self.statistics
-        #     for i in range(weights.shape[0]):
-        #         embedding1 = weights[i]
-        #
-        #         num_neg_class = 0
-        #         num_pos_class = 0
-        #         num_neg = 0
-        #         num_pos = 0
-        #         for j in range(weights.shape[0]):
-        #             embedding2 = weights[j]
-        #
-        #             embedding1_magnitude = torch.linalg.norm(embedding1)
-        #             embedding2_magnitude = torch.linalg.norm(embedding2)
-        #             cosine_similarity = torch.dot(embedding1, embedding2) / (
-        #                         embedding1_magnitude * embedding2_magnitude)
-        #
-        #             if cosine_similarity < 0:
-        #                 if entity[i] == entity[j]:
-        #                     num_neg_class += 1
-        #                 num_neg += 1
-        #             else:
-        #                 if entity[i] == entity[j]:
-        #                     num_pos_class += 1
-        #                 num_pos += 1
-        #             avg += cosine_similarity
-        #
-        #         print("------------------")
-        #         print("Class id: ", entity[i].item())
-        #         print("SUM: ", avg)
-        #         print("Len: ", weights.shape)
-        #         print("Neg: ", num_neg)
-        #         print("Pos: ", num_pos)
-        #         print("Neg class: ", num_neg_class)
-        #         print("Pos class: ", num_pos_class)
-        #
-        #         print("Running avg: ", avg / (i * weights.shape[0]))
-        #     print("Average distance: ", avg / (weights.shape[0] * weights.shape[0]))
-        # return
-
-    def _cluster_distance(self, class_id, embedding):
-        center = numpy.array(self._cluster_center(class_id))
-
-        center_magnitude = numpy.linalg.norm(center)
-        embedding_magnitude = numpy.linalg.norm(embedding)
-        cosine_similarity = numpy.dot(center, embedding) / (center_magnitude * embedding_magnitude)
-        # normalized_center = center / numpy.linalg.norm(center)
-        # normalized_embedding = embedding / numpy.linalg.norm(embedding)
-        # print("--")
-        # print("Normalized distance: ", numpy.linalg.norm(normalized_center - normalized_embedding))
-        # print("Non-normalized distance: ", numpy.linalg.norm(class_id - embedding))
-        # print("Similarity: ", numpy.dot(normalized_center, normalized_embedding))
-        # print("--")
-        return cosine_similarity
+    @staticmethod
+    def compute_f1(stats):
+        precision_divisor = (stats["true_positive"] + stats["false_positive"])
+        precision = stats["true_positive"] / precision_divisor if precision_divisor > 0 else 0
+        recall_divisor = stats["true_positive"] + stats["false_negative"]
+        recall = stats["true_positive"] / recall_divisor if recall_divisor > 0 else 0
+        return 2 * ((precision * recall) / (precision + recall)) if precision + recall > 0 else 0
