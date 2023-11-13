@@ -13,6 +13,8 @@ from torch.utils.data import DataLoader
 from pytorch_metric_learning import losses
 import torch.nn as nn
 import torchvision.transforms as T
+import albumentations.augmentations.transforms as A
+import albumentations as alb
 from safe_gpu import safe_gpu
 
 from data.celeba_data import CelebADataset
@@ -23,23 +25,14 @@ from training.train_config import TrainingConfiguration
 from verification.metrics import Metrics
 
 
-def start_training(model, dataset, config):
-    data_sampler = ResumableRandomSampler(dataset, config)
-    resume_sampler(data_sampler, config)
-    dataloader = DataLoader(dataset, batch_size=config.batch_size, sampler=data_sampler)
+def start_training(model, dataset, data_sampler, config):
     classes = dataset.num_of_classes()
     criterion = losses.ArcFaceLoss(classes, 512).to(config.device)
-    model_optimizer = optim.Adam(model.parameters(), lr=0.00004)
+    model_optimizer = optim.Adam(model.parameters(), lr=0.00005)
     loss_optimizer = optim.SGD(criterion.parameters(), lr=0.01)
+    load_checkpoint(model, model_optimizer, loss_optimizer, criterion, data_sampler, config)
     train(model, dataloader, model_optimizer, loss_optimizer, criterion, config.device, config)
     print("Training succesfully finished.")
-
-
-def resume_sampler(sampler, config):
-    if config.sampler_file_path:
-        sampler_state = torch.load(config.sampler_file_path)
-        sampler.set_state(sampler_state)
-
 
 def print_config_sumup(config, dataset):
     print("*****************************************************")
@@ -56,14 +49,37 @@ def print_config_sumup(config, dataset):
     print("- Number of samples:" + str(len(dataset)))
     print("*****************************************************")
 
+def load_checkpoint(model, model_optimizer, loss_optimizer, criterion, random_sampler, config):
+    if config.checkpoint_path:
+        print("Loading checkpoint from ", config.checkpoint_path, "...")
+        checkpoint = torch.load(config.checkpoint_path)
+        model.load_state_dict(checkpoint["model_weights"])
+        model_optimizer.load_state_dict(checkpoint["model_optimizer"])
+        loss_optimizer.load_state_dict(checkpoint["loss_optimizer"])
+        random_sampler.set_state(checkpoint["random_sampler"])
+        criterion.load_state_dict(checkpoint["loss"])
+
+def load_weights(model, config):
+    if config.checkpoint_path:
+        print("Loading checkpoint from ", config.checkpoint_path, "...")
+        model.load_state_dict(torch.load(config.checkpoint_path)["model_weights"])
 
 def transforms():
     return T.Compose([
         T.ToTensor(),
         T.Resize((224, 224), interpolation=T.InterpolationMode.BICUBIC, antialias=True),
-        T.Normalize([0.48579846, 0.4084752675, 0.3738937391],
-                    [0.2683508996, 0.2441760085, 0.2375956649]),
+        # T.Normalize([0.48579846, 0.4084752675, 0.3738937391],
+        #             [0.2683508996, 0.2441760085, 0.2375956649]),
         lambda x: x.to(torch.float32)
+    ])
+
+def augumentations():
+    return alb.Compose([
+        A.RandomFog(p=0.3),
+        A.Equalize(mode="cv", by_channels=True, p=0.3),
+        A.RandomBrightness(p=0.3),
+        A.Sharpen(p=0.3),
+        A.RandomContrast(p=0.3)
     ])
 
 def dataset(args, device, transform):
@@ -81,6 +97,30 @@ def dataset(args, device, transform):
             device=device,
             transform=transform
         )
+
+def create_model(args, configuration, embedding_size):
+    model = None
+    if args.swin:
+        configuration.model_name = "swin"
+        model = models.swin_t()
+        model.head = nn.Linear(model.head.in_features, embedding_size)
+    elif args.resnet_50:
+        configuration.model_name = "resnet_50"
+        model = models.resnet50()
+        model.fc = nn.Linear(model.fc.in_features, embedding_size)
+    elif args.dat:
+        configuration.model_name = "dat"
+        model = DAT(num_classes=dataset.num_of_classes())
+        model.cls_head = nn.Linear(model.cls_head.in_features, embedding_size)
+    elif args.flatten_transformer:
+        configuration.model_name = "flatten_transformer"
+        model = FLattenSwinTransformer(num_classes=dataset.num_of_classes())
+        model.head = nn.Linear(model.head.in_features, embedding_size)
+    else:
+        configuration.model_name = "smt"
+        model = SMT(num_classes=dataset.num_of_classes())
+        model.head = nn.Linear(model.head.in_features, embedding_size)
+    return model
 
 
 if __name__ == '__main__':
@@ -107,11 +147,10 @@ if __name__ == '__main__':
     parser.add_argument("--files_list", type=str, help="Path to the files list", required=True)
     parser.add_argument("--checkpoint_count", type=int, help="Number of checkpoints to keep", default=5)
     parser.add_argument("--checkpoint_freq", type=int, help="Frequency of checkpoints", default=150)
-    parser.add_argument("--checkpoint_path", type=str, help="Path where to save checkpoints", default="./")
+    parser.add_argument("--checkpoints_dir", type=str, help="Path where to save checkpoints", default="./")
     parser.add_argument("-b", "--batch_size", type=int, help="Minibatch size", default=32)
     parser.add_argument("-e", "--num_of_epoch", type=int, help="Number of epochs", default=50)
-    parser.add_argument("--weight", type=str, help="Path to a model weights file")
-    parser.add_argument("--sampler", type=str, help="Path to a sampler state file")
+    parser.add_argument("--checkpoint_path", type=str, help="Path to the checkpoint file", default=None)
     parser.add_argument("--gpu", type=int, help="Which GPU unit to use (default is 0)", default=0)
 
     args = parser.parse_args()
@@ -120,80 +159,33 @@ if __name__ == '__main__':
     configuration = TrainingConfiguration(
         model_name=None,
         device=device("cuda:" + str(args.gpu) if cuda.is_available() else "cpu"),
-        sampler_file_path=args.sampler,
         checkpoint_count=args.checkpoint_count,
         checkpoint_freq=args.checkpoint_freq,
-        export_weights_dir=args.checkpoint_path,
-        import_weight_path=args.weight,
+        export_weights_dir=args.checkpoints_dir,
+        checkpoint_path=args.checkpoint_path,
         batch_size=args.batch_size,
         num_of_epoch=args.num_of_epoch
     )
 
     dataset = dataset(args, configuration.device, transforms())
-
-    if args.swin:
-        configuration.model_name = "swin"
-        model = models.swin_t()
-        model.head = nn.Linear(model.head.in_features, 512)
-    elif args.resnet_50:
-        configuration.model_name = "resnet_50"
-        model = models.resnet50()
-        model.fc = nn.Linear(model.fc.in_features, 512)
-    elif args.dat:
-        configuration.model_name = "dat"
-        model = DAT(num_classes=dataset.num_of_classes())
-        model.cls_head = nn.Linear(model.cls_head.in_features, 512)
-    elif args.flatten_transformer:
-        configuration.model_name = "flatten_transformer"
-        model = FLattenSwinTransformer(num_classes=dataset.num_of_classes())
-        model.head = nn.Linear(model.head.in_features, 512)
-    else:
-        configuration.model_name = "smt"
-        model = SMT(num_classes=dataset.num_of_classes())
-        model.head = nn.Linear(model.head.in_features, 512)
-
+    model = create_model(args, configuration, 512)
     model = model.to(configuration.device)
 
-    if args.weight:
-        print("Loading weights from ", args.weight)
-        state_dict = torch.load(args.weight, map_location=configuration.device)
-        model.load_state_dict(state_dict)
+    data_sampler = ResumableRandomSampler(dataset, configuration)
+    dataloader = DataLoader(dataset, batch_size=configuration.batch_size)#, sampler=data_sampler)
 
     if not args.eval:
         print_config_sumup(configuration, dataset)
-        start_training(model, dataset, configuration)
+        start_training(model, dataset, dataloader, configuration)
     else:
-        dataloader = DataLoader(dataset, batch_size=configuration.batch_size)
+        load_weights(model, configuration)
         metrics = Metrics(model, dataloader, configuration)
-        metrics._run_statistics()
-        #metrics._test_metrics()
+        stats = metrics.pair_stats(0.1)
+        f1 = metrics.compute_f1(stats)
 
-        for sample in metrics.statistics.keys():
-            item = metrics.statistics[sample][0]
-
-            score = 0
-            matching_class = None
-
-            print("*****************************************************")
-            print("Sample: ", sample)
-
-            class_center = metrics._cluster_center(sample)
-
-            for entity in metrics.statistics.keys():
-                item2 = metrics.statistics[entity][0]
-                dist = metrics._cluster_distance(entity, item)
-                target_center = metrics._cluster_center(entity)
-                dist2 = metrics._similarity(item, item2)
-
-                print("---------------")
-                print(entity, "> ", metrics._similarity(class_center, target_center))
-                print("> sample-cluster: ", dist)
-                print("> sample-sample: ", dist2)
-                print("---------------")
-
-                if dist > score:
-                    score = dist
-                    matching_class = entity
-
-            print("*****************************************************")
-            print("Sample of class ", sample, " is closes to ", matching_class, " class center.")
+        print("*** Metrics ***")
+        print("True positive: ", stats["true_positive"])
+        print("False positive: ", stats["false_positive"])
+        print("False negative: ", stats["false_negative"])
+        print("True negative: ", stats["true_negative"])
+        print("F1 score: ", f1)
