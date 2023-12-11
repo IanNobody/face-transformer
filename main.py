@@ -10,11 +10,13 @@ from torch import optim
 from torch import device
 from torch import cuda
 from torch.utils.data import DataLoader
+from torch.optim import lr_scheduler
 from pytorch_metric_learning import losses
 import torch.nn as nn
 import torchvision.transforms as T
 import albumentations.augmentations.transforms as A
 import albumentations as alb
+from checkpointing.checkpoint import load_checkpoint
 
 from data.celeba_data import CelebADataset
 from data.vggface_data import VGGFaceDataset
@@ -28,9 +30,22 @@ def start_training(model, dataset, data_sampler, config):
     classes = dataset.num_of_classes()
     criterion = losses.ArcFaceLoss(classes, 512).to(config.device)
     model_optimizer = optim.Adam(model.parameters(), lr=0.00005)
-    loss_optimizer = optim.SGD(criterion.parameters(), lr=0.01)
-    load_checkpoint(model, model_optimizer, loss_optimizer, criterion, data_sampler, config)
-    train(model, dataloader, model_optimizer, loss_optimizer, criterion, config.device, config)
+    loss_optimizer = optim.SGD(criterion.parameters(), lr=0.001)
+    load_checkpoint(model, model_optimizer, loss_optimizer, criterion, data_sampler.sampler, config)
+    model_scheduler = lr_scheduler.OneCycleLR(
+        model_optimizer,
+        max_lr=0.00005,
+        steps_per_epoch=len(data_sampler),
+        epochs=config.num_of_epoch
+    )
+    loss_scheduler = lr_scheduler.OneCycleLR(
+        loss_optimizer,
+        max_lr = 0.001,
+        steps_per_epoch=len(data_sampler),
+        epochs=config.num_of_epoch
+    )
+
+    train(model, dataloader, model_optimizer, loss_optimizer, model_scheduler, loss_scheduler, criterion, config.device, config)
     print("Training succesfully finished.")
 
 
@@ -49,20 +64,6 @@ def print_config_sumup(config, dataset):
     print("- Number of samples:" + str(len(dataset)))
     print("*****************************************************")
 
-def load_checkpoint(model, model_optimizer, loss_optimizer, criterion, random_sampler, config):
-    if config.checkpoint_path:
-        print("Loading checkpoint from ", config.checkpoint_path, "...")
-        checkpoint = torch.load(config.checkpoint_path)
-        model.load_state_dict(checkpoint["model_weights"])
-        model_optimizer.load_state_dict(checkpoint["model_optimizer"])
-        loss_optimizer.load_state_dict(checkpoint["loss_optimizer"])
-        random_sampler.set_state(checkpoint["random_sampler"])
-        criterion.load_state_dict(checkpoint["loss"])
-
-def load_weights(model, config):
-    if config.checkpoint_path:
-        print("Loading checkpoint from ", config.checkpoint_path, "...")
-        model.load_state_dict(torch.load(config.checkpoint_path)["model_weights"])
 
 def transforms():
     return T.Compose([
@@ -153,7 +154,8 @@ if __name__ == '__main__':
     parser.add_argument("--checkpoints_dir", type=str, help="Path where to save checkpoints", default="./")
     parser.add_argument("-b", "--batch_size", type=int, help="Minibatch size", default=32)
     parser.add_argument("-e", "--num_of_epoch", type=int, help="Number of epochs", default=50)
-    parser.add_argument("--checkpoint_path", type=str, help="Path to the checkpoint file", default=None)
+    parser.add_argument("--checkpoint_path", type=str, help="Path to the checkpoint file or directory of checkpoints", default=None)
+    parser.add_argument("--output_dir", type=str, help="Path where to store model statistics", default=None)
     parser.add_argument("--gpu", type=int, help="Which GPU unit to use (default is 0)", default=0)
 
     args = parser.parse_args()

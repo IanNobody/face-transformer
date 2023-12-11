@@ -4,7 +4,7 @@ import torch
 from os.path import join
 
 
-def train(model, dataloader, model_optimizer, loss_optimizer, criterion, device, config):
+def train(model, dataloader, model_optimizer, loss_optimizer, model_scheduler, loss_scheduler, criterion, device, config):
     model.train()
 
     top_checkpoints = []
@@ -15,8 +15,8 @@ def train(model, dataloader, model_optimizer, loss_optimizer, criterion, device,
             model_optimizer.zero_grad()
             loss_optimizer.zero_grad()
 
-            x = data["image"]
-            gt = data["entity"].detach()
+            x = data["image"].to(device)
+            gt = data["entity"].to(device)
 
             if config.model_name == "dat":
                 out = model(x)[0]
@@ -27,6 +27,8 @@ def train(model, dataloader, model_optimizer, loss_optimizer, criterion, device,
             loss.backward()
             model_optimizer.step()
             loss_optimizer.step()
+            model_scheduler.step()
+            loss_scheduler.step()
 
             current_loss = loss.item()
             running_loss += current_loss
