@@ -5,6 +5,10 @@ import torch
 from models.DAT.dat import DAT
 from models.Flatten_T.flatten_swin import FLattenSwinTransformer
 from models.SMT.smt import SMT
+from models.BiFormer.biformer import biformer_base
+from models.NomMer.nommer import NomMerAttn
+from models.DW_ViT.DW_ViT import DW_ViT
+
 import torchvision.models as models
 from torch import optim
 from torch import device
@@ -120,10 +124,21 @@ def create_model(args, configuration, embedding_size):
         configuration.model_name = "flatten_transformer"
         model = FLattenSwinTransformer(num_classes=dataset.num_of_classes())
         model.head = nn.Linear(model.head.in_features, embedding_size)
-    else:
+    elif args.smt:
         configuration.model_name = "smt"
         model = SMT(num_classes=dataset.num_of_classes())
         model.head = nn.Linear(model.head.in_features, embedding_size)
+    elif args.biformer:
+        configuration.model_name = "biformer"
+        model = biformer_base()
+        model.head = nn.Linear(model.head.in_features, embedding_size)
+    elif args.nommer:
+        configuration.model_name = "nommer"
+        model = NomMerAttn(configuration.device, num_class=dataset.num_of_classes(), emd_dim=embedding_size)
+    else:
+        configuration.model_name = "dw-vit"
+        model = DW_ViT(num_class=dataset.num_of_classes(), emd_dim=embedding_size)
+
     return model
 
 
@@ -138,6 +153,9 @@ if __name__ == '__main__':
     model_group.add_argument("--dat", action="store_true", help="Use dynamic attention model")
     model_group.add_argument("--flatten_transformer", action="store_true", help="Use flatten transformer model")
     model_group.add_argument("--smt", action="store_true", help="Scale aware modulation transformer")
+    model_group.add_argument("--biformer", action="store_true", help="Use BiFormer model")
+    model_group.add_argument("--nommer", action="store_true", help="Use NomMer model")
+    model_group.add_argument("--dw-vit", action="store_true", help="Use DW_ViT model")
     # model_group.add_argument("--cmt", action="store_true", help="Use CMT ViT-CNN hybrid model")
 
     dataset_group = parser.add_mutually_exclusive_group(required=True)
@@ -167,7 +185,7 @@ if __name__ == '__main__':
         checkpoint_freq=args.checkpoint_freq,
         export_weights_dir=args.checkpoints_dir,
         checkpoint_path=args.checkpoint_path,
-        batch_size=args.batch_size,
+        batch_size=int(args.batch_size / 16),
         num_of_epoch=args.num_of_epoch
     )
 
