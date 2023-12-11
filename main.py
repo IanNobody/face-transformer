@@ -15,7 +15,6 @@ import torch.nn as nn
 import torchvision.transforms as T
 import albumentations.augmentations.transforms as A
 import albumentations as alb
-from safe_gpu import safe_gpu
 
 from data.celeba_data import CelebADataset
 from data.vggface_data import VGGFaceDataset
@@ -33,6 +32,7 @@ def start_training(model, dataset, data_sampler, config):
     load_checkpoint(model, model_optimizer, loss_optimizer, criterion, data_sampler, config)
     train(model, dataloader, model_optimizer, loss_optimizer, criterion, config.device, config)
     print("Training succesfully finished.")
+
 
 def print_config_sumup(config, dataset):
     print("*****************************************************")
@@ -73,6 +73,7 @@ def transforms():
         lambda x: x.to(torch.float32)
     ])
 
+
 def augumentations():
     return alb.Compose([
         A.RandomFog(p=0.3),
@@ -81,6 +82,7 @@ def augumentations():
         A.Sharpen(p=0.3),
         A.RandomContrast(p=0.3)
     ])
+
 
 def dataset(args, device, transform):
     if args.vggface:
@@ -97,6 +99,7 @@ def dataset(args, device, transform):
             device=device,
             transform=transform
         )
+
 
 def create_model(args, configuration, embedding_size):
     model = None
@@ -154,7 +157,6 @@ if __name__ == '__main__':
     parser.add_argument("--gpu", type=int, help="Which GPU unit to use (default is 0)", default=0)
 
     args = parser.parse_args()
-    #safe_gpu.claim_gpus()
 
     configuration = TrainingConfiguration(
         model_name=None,
