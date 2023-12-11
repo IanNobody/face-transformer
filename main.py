@@ -193,21 +193,12 @@ if __name__ == '__main__':
     model = create_model(args, configuration, 512)
     model = model.to(configuration.device)
 
-    data_sampler = ResumableRandomSampler(dataset, configuration)
-    dataloader = DataLoader(dataset, batch_size=configuration.batch_size)#, sampler=data_sampler)
-
     if not args.eval:
+        data_sampler = ResumableRandomSampler(dataset, configuration)
+        dataloader = DataLoader(dataset, batch_size=configuration.batch_size, sampler=data_sampler, num_workers=8)
         print_config_sumup(configuration, dataset)
         start_training(model, dataset, dataloader, configuration)
     else:
-        load_weights(model, configuration)
+        dataloader = DataLoader(dataset, batch_size=configuration.batch_size, num_workers=16, shuffle=True)
         metrics = Metrics(model, dataloader, configuration)
-        stats = metrics.pair_stats(0.1)
-        f1 = metrics.compute_f1(stats)
-
-        print("*** Metrics ***")
-        print("True positive: ", stats["true_positive"])
-        print("False positive: ", stats["false_positive"])
-        print("False negative: ", stats["false_negative"])
-        print("True negative: ", stats["true_negative"])
-        print("F1 score: ", f1)
+        metrics.test_all_weights(configuration.checkpoint_path, args.output_dir, model)

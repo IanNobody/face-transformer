@@ -42,9 +42,9 @@ class VGGFaceDataset(Dataset):
         if self.transform:
             image = self.transform(image)
 
-        if self.device:
-            image = image.to(self.device)
-            ann = ann.to(self.device)
+        # if self.device:
+            # image = image.to(self.device)
+            # ann = ann.to(self.device)
 
         sample = {'image': image, 'entity': ann}
         return sample

@@ -9,6 +9,8 @@ pandas = "*"
 opencv-python = "*"
 torchvision = "*"
 pytorch_metric_learning = "*"
+matplotlib = "*"
+tensorflow = "*"
 
 [dev-packages]
 
