@@ -9,8 +9,8 @@ class ResumableRandomSampler(Sampler):
         self.generator = torch.Generator()
         self.generator.manual_seed(config.sampler_seed)
 
-        self.perm_index = 0
-        self.perm = torch.randperm(self.num_samples, generator=self.generator)
+        self.perm_index = torch.tensor(0).share_memory_()
+        self.perm = torch.randperm(self.num_samples, generator=self.generator).share_memory_()
 
     @property
     def num_samples(self) -> int:
