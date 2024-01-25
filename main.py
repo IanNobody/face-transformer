@@ -30,24 +30,13 @@ from training.train_config import TrainingConfiguration
 from verification.metrics import Metrics
 
 
-    criterion = losses.ArcFaceLoss(classes, 512).to(config.device)
-    model_optimizer = optim.Adam(model.parameters(), lr=0.00005)
 def start_training(model, dataset, data_sampler, config, classes):
+    criterion = losses.ArcFaceLoss(classes, 256).to(config.device)
+    model_optimizer = optim.AdamW(model.parameters(), lr=0.00005)
     loss_optimizer = optim.SGD(criterion.parameters(), lr=0.001)
     load_checkpoint(model, model_optimizer, loss_optimizer, criterion, data_sampler.sampler, config)
-    model_scheduler = lr_scheduler.OneCycleLR(
-        model_optimizer,
-        max_lr=0.00005,
-        steps_per_epoch=len(data_sampler),
-        epochs=config.num_of_epoch
-    )
-    loss_scheduler = lr_scheduler.OneCycleLR(
-        loss_optimizer,
-        max_lr = 0.001,
-        steps_per_epoch=len(data_sampler),
-        epochs=config.num_of_epoch
-    )
-
+    model_scheduler = lr_scheduler.LinearLR(model_optimizer, 0.0001, 0.00001, config.num_of_epoch)
+    loss_scheduler = lr_scheduler.LinearLR(model_optimizer, 0.001, 0.00001, config.num_of_epoch)
     train(model, dataloader, model_optimizer, loss_optimizer, model_scheduler, loss_scheduler, criterion, config.device, config)
     print("Training succesfully finished.")
 
