@@ -132,12 +132,6 @@ def create_model(args, configuration, embedding_size):
         configuration.model_name = "biformer"
         model = biformer_base()
         model.head = nn.Linear(model.head.in_features, embedding_size)
-    elif args.nommer:
-        configuration.model_name = "nommer"
-        model = NomMerAttn(configuration.device, num_class=dataset.num_of_classes(), emd_dim=embedding_size)
-    else:
-        configuration.model_name = "dw-vit"
-        model = DW_ViT(num_class=dataset.num_of_classes(), emd_dim=embedding_size)
 
     return model
 
