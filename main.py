@@ -6,14 +6,13 @@ from models.DAT.dat import DAT
 from models.Flatten_T.flatten_swin import FLattenSwinTransformer
 from models.SMT.smt import SMT
 from models.BiFormer.biformer import biformer_base
-from models.NomMer.nommer import NomMerAttn
-from models.DW_ViT.DW_ViT import DW_ViT
+from models.CMT.cmt import cmt_b
 
 import torchvision.models as models
 from torch import optim
 from torch import device
 from torch import cuda
-from torch.utils.data import DataLoader
+from torch.utils.data import DataLoader, ConcatDataset
 from torch.optim import lr_scheduler
 from pytorch_metric_learning import losses
 import torch.nn as nn
@@ -24,16 +23,16 @@ from checkpointing.checkpoint import load_checkpoint
 
 from data.celeba_data import CelebADataset
 from data.vggface_data import VGGFaceDataset
+from data.lfw_data import LFWDataset
 from training.resumable_sampler import ResumableRandomSampler
 from training.train import train
 from training.train_config import TrainingConfiguration
 from verification.metrics import Metrics
 
 
-def start_training(model, dataset, data_sampler, config):
-    classes = dataset.num_of_classes()
     criterion = losses.ArcFaceLoss(classes, 512).to(config.device)
     model_optimizer = optim.Adam(model.parameters(), lr=0.00005)
+def start_training(model, dataset, data_sampler, config, classes):
     loss_optimizer = optim.SGD(criterion.parameters(), lr=0.001)
     load_checkpoint(model, model_optimizer, loss_optimizer, criterion, data_sampler.sampler, config)
     model_scheduler = lr_scheduler.OneCycleLR(
@@ -52,8 +51,14 @@ def start_training(model, dataset, data_sampler, config):
     train(model, dataloader, model_optimizer, loss_optimizer, model_scheduler, loss_scheduler, criterion, config.device, config)
     print("Training succesfully finished.")
 
+def count_parameters(model):
+    return sum(p.numel() for p in model.parameters() if p.requires_grad)
 
-def print_config_sumup(config, dataset):
+def print_config_sumup(config, dataset, model, num_of_classes):
+    print("*****************************************************")
+    print("Model details: ")
+    print("- Model name:" + str(config.model_name))
+    print("- Number of parameters:" + str(count_parameters(model)))
     print("*****************************************************")
     print("Beginning training with the following parameters:")
     print("- Number of epochs:" + str(config.num_of_epoch))
@@ -64,7 +69,7 @@ def print_config_sumup(config, dataset):
     print("Dataset information:")
     print("- Dataset path:" + str(args.dataset_path))
     print("- Files catalog:" + str(args.files_list))
-    print("- Number of classes:" + str(dataset.num_of_classes()))
+    print("- Number of classes:" + str(num_of_classes))
     print("- Number of samples:" + str(len(dataset)))
     print("*****************************************************")
 
@@ -90,23 +95,31 @@ def augumentations():
 
 
 def dataset(args, device, transform):
+    datasets = []
+
     if args.vggface:
-        return VGGFaceDataset(
+        datasets.append(VGGFaceDataset(
             args.dataset_path,
             args.files_list,
             device=device,
             transform=transform
-        )
+        ))
     elif args.celeba:
-        return CelebADataset(
+        datasets.append(CelebADataset(
             args.annotation_path,
             args.dataset_path,
             device=device,
             transform=transform
-        )
+        ))
+    elif args.lfw:
+        datasets.append(LFWDataset(
+            transform=transform,
+            device=device
+        ))
 
+    return ConcatDataset(datasets), sum([d.num_of_classes() for d in datasets])
 
-def create_model(args, configuration, embedding_size):
+def create_model(args, configuration, embedding_size, num_of_classes):
     model = None
     if args.swin:
         configuration.model_name = "swin"
@@ -118,19 +131,23 @@ def create_model(args, configuration, embedding_size):
         model.fc = nn.Linear(model.fc.in_features, embedding_size)
     elif args.dat:
         configuration.model_name = "dat"
-        model = DAT(num_classes=dataset.num_of_classes())
+        model = DAT(num_classes=num_of_classes)
         model.cls_head = nn.Linear(model.cls_head.in_features, embedding_size)
     elif args.flatten_transformer:
         configuration.model_name = "flatten_transformer"
-        model = FLattenSwinTransformer(num_classes=dataset.num_of_classes())
+        model = FLattenSwinTransformer(num_classes=num_of_classes)
         model.head = nn.Linear(model.head.in_features, embedding_size)
     elif args.smt:
         configuration.model_name = "smt"
-        model = SMT(num_classes=dataset.num_of_classes())
+        model = SMT(num_classes=num_of_classes)
         model.head = nn.Linear(model.head.in_features, embedding_size)
     elif args.biformer:
         configuration.model_name = "biformer"
         model = biformer_base()
+        model.head = nn.Linear(model.head.in_features, embedding_size)
+    elif args.cmt:
+        configuration.model_name = "cmt"
+        model = cmt_b(num_classes=num_of_classes)
         model.head = nn.Linear(model.head.in_features, embedding_size)
 
     return model
@@ -148,19 +165,17 @@ if __name__ == '__main__':
     model_group.add_argument("--flatten_transformer", action="store_true", help="Use flatten transformer model")
     model_group.add_argument("--smt", action="store_true", help="Scale aware modulation transformer")
     model_group.add_argument("--biformer", action="store_true", help="Use BiFormer model")
-    model_group.add_argument("--nommer", action="store_true", help="Use NomMer model")
-    model_group.add_argument("--dw-vit", action="store_true", help="Use DW_ViT model")
-    # model_group.add_argument("--cmt", action="store_true", help="Use CMT ViT-CNN hybrid model")
+    model_group.add_argument("--cmt", action="store_true", help="Use CMT ViT-CNN hybrid model")
 
-    dataset_group = parser.add_mutually_exclusive_group(required=True)
+    dataset_group = parser.add_argument_group()
     dataset_group.add_argument("--celeba", action="store_true", help="Use CelebA dataset")
     dataset_group.add_argument("--vggface", action="store_true", help="Use VGGFace2 dataset")
-    #dataset_group.add_argument("--ms-celeb", action="store_true", help="Use MS-Celeb-1M dataset")
+    dataset_group.add_argument("--cacd", action="store_true", help="Use cross-age CACD dataset")
+    dataset_group.add_argument("--lfw", action="store_true", help="Use LFW benchmark dataset")
 
     parser.add_argument("--eval", action="store_true", help="Evaluate the model on the dataset")
-    parser.add_argument("--dataset_path", type=str, help="Path to the dataset directory", required=True)
-    # parser.add_argument("--annotation_path", type=str, help="Path to the annotation file", required=True)
-    parser.add_argument("--files_list", type=str, help="Path to the files list", required=True)
+    parser.add_argument("--dataset_path", type=str, help="Path to the dataset directory")
+    parser.add_argument("--files_list", type=str, help="Path to the files list")
     parser.add_argument("--checkpoint_count", type=int, help="Number of checkpoints to keep", default=5)
     parser.add_argument("--checkpoint_freq", type=int, help="Frequency of checkpoints", default=150)
     parser.add_argument("--checkpoints_dir", type=str, help="Path where to save checkpoints", default="./")
@@ -179,20 +194,20 @@ if __name__ == '__main__':
         checkpoint_freq=args.checkpoint_freq,
         export_weights_dir=args.checkpoints_dir,
         checkpoint_path=args.checkpoint_path,
-        batch_size=int(args.batch_size / 16),
+        batch_size=int(args.batch_size / 5),
         num_of_epoch=args.num_of_epoch
     )
 
-    dataset = dataset(args, configuration.device, transforms())
-    model = create_model(args, configuration, 512)
+    dataset, num_of_classes = dataset(args, configuration.device, transforms())
+    model = create_model(args, configuration, 256, num_of_classes)
     model = model.to(configuration.device)
 
     if not args.eval:
         data_sampler = ResumableRandomSampler(dataset, configuration)
-        dataloader = DataLoader(dataset, batch_size=configuration.batch_size, sampler=data_sampler, num_workers=8)
-        print_config_sumup(configuration, dataset)
-        start_training(model, dataset, dataloader, configuration)
+        dataloader = DataLoader(dataset, batch_size=configuration.batch_size, sampler=data_sampler, num_workers=5)
+        print_config_sumup(configuration, dataset, model, num_of_classes)
+        start_training(model, dataset, dataloader, configuration, num_of_classes)
     else:
-        dataloader = DataLoader(dataset, batch_size=configuration.batch_size, num_workers=16, shuffle=True)
+        dataloader = DataLoader(dataset, batch_size=configuration.batch_size, num_workers=16, shuffle=True, collate_fn=LFWDataset.collate_fn)
         metrics = Metrics(model, dataloader, configuration)
         metrics.test_all_weights(configuration.checkpoint_path, args.output_dir, model)
