@@ -12,6 +12,7 @@ pytorch_metric_learning = "*"
 matplotlib = "*"
 tensorflow = "*"
 eer = "*"
+transformers = "*"
 
 [dev-packages]
 
