@@ -7,6 +7,7 @@ from models.Flatten_T.flatten_swin import FLattenSwinTransformer
 from models.SMT.smt import SMT
 from models.BiFormer.biformer import biformer_base
 from models.CMT.cmt import cmt_b
+from models.NoisyViT.noisy_vit import vit_s
 
 import torchvision.models as models
 from torch import optim
@@ -138,6 +139,10 @@ def create_model(args, configuration, embedding_size, num_of_classes):
         configuration.model_name = "cmt"
         model = cmt_b(num_classes=num_of_classes)
         model.head = nn.Linear(model.head.in_features, embedding_size)
+    elif args.noisy_vit:
+        configuration.model_name = "noisy_vit"
+        model = vit_s()
+        model.head = nn.Linear(model.head.in_features, embedding_size)
 
     return model
 
@@ -155,6 +160,7 @@ if __name__ == '__main__':
     model_group.add_argument("--smt", action="store_true", help="Scale aware modulation transformer")
     model_group.add_argument("--biformer", action="store_true", help="Use BiFormer model")
     model_group.add_argument("--cmt", action="store_true", help="Use CMT ViT-CNN hybrid model")
+    model_group.add_argument("--noisy_vit", action="store_true", help="Use Noisy ViT model")
 
     dataset_group = parser.add_argument_group()
     dataset_group.add_argument("--celeba", action="store_true", help="Use CelebA dataset")
@@ -188,7 +194,7 @@ if __name__ == '__main__':
     )
 
     dataset, num_of_classes = dataset(args, configuration.device, transforms())
-    model = create_model(args, configuration, 256, num_of_classes)
+    model = create_model(args, configuration, 512, num_of_classes)
     model = model.to(configuration.device)
 
     if not args.eval:
