@@ -12,6 +12,12 @@ def load_checkpoint(model, model_optimizer, loss_optimizer, criterion, random_sa
         criterion.load_state_dict(checkpoint["loss"])
 
 
+def load_model(model, checkpoint_path):
+    if checkpoint_path:
+        print("Loading checkpoint from ", checkpoint_path, "...")
+        model.load_state_dict(torch.load(checkpoint_path)["model_weights"])
+
+
 def load_weights(model, checkpoint_path, device):
     if checkpoint_path:
         print("Loading checkpoint from ", checkpoint_path, "...")
