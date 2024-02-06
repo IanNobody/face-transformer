@@ -7,7 +7,7 @@ from models.Flatten_T.flatten_swin import FLattenSwinTransformer
 from models.SMT.smt import SMT
 from models.BiFormer.biformer import biformer_base
 from models.CMT.cmt import cmt_b
-from models.NoisyViT.noisy_vit import vit_s
+from models.NoisyViT.noisy_vit import vit_b
 from models.OpenCLIP.pretrained_openclip import OpenCLIPWrapper
 
 import torchvision.models as models
@@ -153,7 +153,7 @@ def create_model(args, configuration, embedding_size, num_of_classes):
         model.head = nn.Linear(model.head.in_features, embedding_size)
     elif args.noisy_vit:
         configuration.model_name = "noisy_vit"
-        model = vit_s()
+        model = vit_b()
         model.head = nn.Linear(model.head.in_features, embedding_size)
     elif args.openclip:
         configuration.model_name = "openclip"
