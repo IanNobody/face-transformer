@@ -8,6 +8,7 @@ from models.SMT.smt import SMT
 from models.BiFormer.biformer import biformer_base
 from models.CMT.cmt import cmt_b
 from models.NoisyViT.noisy_vit import vit_s
+from models.OpenCLIP.pretrained_openclip import OpenCLIPWrapper
 
 import torchvision.models as models
 from torch import optim
@@ -80,6 +81,7 @@ def transforms():
         T.Resize((224, 224), interpolation=T.InterpolationMode.BICUBIC, antialias=True),
         # T.Normalize([0.48579846, 0.4084752675, 0.3738937391],
         #             [0.2683508996, 0.2441760085, 0.2375956649]),
+        T.Lambda(lambda x: torch.clamp(x, 0, 1)),
         lambda x: x.to(torch.float32)
     ])
 
@@ -153,6 +155,9 @@ def create_model(args, configuration, embedding_size, num_of_classes):
         configuration.model_name = "noisy_vit"
         model = vit_s()
         model.head = nn.Linear(model.head.in_features, embedding_size)
+    elif args.openclip:
+        configuration.model_name = "openclip"
+        model = OpenCLIPWrapper(configuration.device)
 
     return model
 
@@ -171,6 +176,7 @@ if __name__ == '__main__':
     model_group.add_argument("--biformer", action="store_true", help="Use BiFormer model")
     model_group.add_argument("--cmt", action="store_true", help="Use CMT ViT-CNN hybrid model")
     model_group.add_argument("--noisy_vit", action="store_true", help="Use Noisy ViT model")
+    model_group.add_argument("--openclip", action="store_true", help="Use OpenAI CLIP model")
 
     dataset_group = parser.add_argument_group()
     dataset_group.add_argument("--celeba", action="store_true", help="Use CelebA dataset")
