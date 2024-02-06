@@ -34,7 +34,7 @@ from verification.metrics import Metrics
 
 def start_training(model, dataset, data_sampler, config, classes):
     criterion = losses.ArcFaceLoss(classes, 512).to(config.device)
-    model_optimizer = optim.Adam(model.parameters(), lr=0.00005)
+    model_optimizer = optim.Adam(model.parameters(), lr=0.0005)
     loss_optimizer = optim.SGD(criterion.parameters(), lr=0.001)
     load_checkpoint(model, model_optimizer, loss_optimizer, criterion, data_sampler.sampler, config)
     model_scheduler = lr_scheduler.OneCycleLR(
