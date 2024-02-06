@@ -40,8 +40,8 @@ device = torch.device("cuda:" + str(args.gpu) if torch.cuda.is_available() else 
 model.to(device)
 
 load_model(model, args.checkpoint)
-dataset = JoinedDataset(args.target, args.ref, device=device, transform=transforms())
-dataloader = DataLoader(dataset, batch_size=150, shuffle=False, collate_fn=JoinedDataset.collate_fn)
+dataset = JoinedDataset(args.target, args.ref, transform=transforms())
+dataloader = DataLoader(dataset, batch_size=200, shuffle=False, num_workers=5, collate_fn=JoinedDataset.collate_fn)
 model.eval()
 threshold = args.threshold
 
@@ -63,15 +63,14 @@ for idx, data_sample in enumerate(dataloader):
         ref_em = model(ref_imgs)
         tgt_em = model(target_imgs)
 
-        for rf, tgt, rf_cm, tgt_c in zip(ref_em, tgt_em, ref_cls, target_cls):
+        for rf, tgt, rf_c, tgt_c in zip(ref_em, tgt_em, ref_cls, target_cls):
             similarity = torch.cosine_similarity(rf, tgt, dim=0).item()
             if similarity > threshold:
-                if tgt in similarities.keys():
-                    print(tgt, " matches with ", rf_cm, " with similarity ", similarity)
-                    record = (similarity, rf)
-                    similarities[tgt].append(record)
-                    matches += 1
+                if tgt_c in similarities.keys():
+                    if similarities[tgt_c][0] < similarity:
+                        similarities[tgt_c] = (similarity, rf_c)
                 else:
-                    similarities[tgt] = [(similarity, rf)]
+                    similarities[tgt_c] = (similarity, rf_c)
 
-print("Done, found ", matches, " matches.")
+for tgt_class in similarities.keys():
+    print("Match: Target class: ", tgt_class, " | Similarity: ", similarities[tgt_class][0], " | Reference class: ", similarities[tgt_class][1])
