@@ -32,12 +32,12 @@ from verification.metrics import Metrics
 
 
 def start_training(model, dataset, data_sampler, config, classes):
-    criterion = losses.ArcFaceLoss(classes, 256).to(config.device)
-    model_optimizer = optim.AdamW(model.parameters(), lr=0.00005)
-    loss_optimizer = optim.SGD(criterion.parameters(), lr=0.001)
+    criterion = losses.ArcFaceLoss(classes, 512).to(config.device)
+    model_optimizer = optim.AdamW(model.parameters(), lr=0.0001)
+    loss_optimizer = optim.SGD(criterion.parameters(), lr=0.0005)
     load_checkpoint(model, model_optimizer, loss_optimizer, criterion, data_sampler.sampler, config)
-    model_scheduler = lr_scheduler.LinearLR(model_optimizer, 0.0001, 0.00001, config.num_of_epoch)
-    loss_scheduler = lr_scheduler.LinearLR(model_optimizer, 0.001, 0.00001, config.num_of_epoch)
+    model_scheduler = lr_scheduler.CosineAnnealingLR(model_optimizer, config.num_of_epoch, eta_min=0.00001)
+    loss_scheduler = lr_scheduler.CosineAnnealingLR(loss_optimizer, config.num_of_epoch, 0.00005)
     train(model, dataloader, model_optimizer, loss_optimizer, model_scheduler, loss_scheduler, criterion, config.device, config)
     print("Training succesfully finished.")
 
