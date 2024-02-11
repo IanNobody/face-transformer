@@ -33,6 +33,8 @@ from verification.metrics import Metrics
 
 
 def start_training(model, dataset, data_sampler, config, classes):
+    val_data = LFWDataset(transform=transforms(), device=config.device)
+    val_dataloader = DataLoader(val_data, batch_size=configuration.batch_size, num_workers=16, shuffle=True, collate_fn=LFWDataset.collate_fn)
     criterion = losses.ArcFaceLoss(classes, 512).to(config.device)
     model_optimizer = optim.Adam(model.parameters(), lr=0.0005)
     loss_optimizer = optim.SGD(criterion.parameters(), lr=0.001)
@@ -49,7 +51,7 @@ def start_training(model, dataset, data_sampler, config, classes):
         steps_per_epoch=len(data_sampler),
         epochs=config.num_of_epoch
     )
-    train(model, dataloader, model_optimizer, loss_optimizer, model_scheduler, loss_scheduler, criterion, config.device, config)
+    train(model, dataloader, val_dataloader, model_optimizer, loss_optimizer, model_scheduler, loss_scheduler, criterion, config.device, config)
     print("Training succesfully finished.")
 
 def count_parameters(model):

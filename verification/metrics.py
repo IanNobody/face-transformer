@@ -18,8 +18,18 @@ class Metrics:
         self.labels = []
         self.stats = { "threshold": [], "roc_auc": [], "f1": [], "accuracy": [], "eer": [], "tpr": [], "fpr": [], "precision": [], "recall": [] }
 
+    def validate(self):
+        self._run_stats()
+        fpr, tpr, thresholds, roc_auc = self._generate_roc()
+        best_threshold = self._get_best_threshold(fpr, tpr, thresholds, 0.0001)
+        stats = self._threshold_based_statistics(best_threshold)
+        f1 = self._compute_f1(stats)
+        accuracy = (stats["true_positive"] + stats["true_negative"]) / len(self.similarities)
+        return f1, accuracy
+
     def _run_stats(self):
         self.model.eval()
+        self._clear_stats()
 
         for idx, data_sample in enumerate(self.dataloader):
             img1 = data_sample["img1"].to(self.config.device)

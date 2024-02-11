@@ -2,13 +2,13 @@ import os
 from datetime import datetime
 import torch
 from os.path import join
+from verification.metrics import Metrics
 
 
-def train(model, dataloader, model_optimizer, loss_optimizer, model_scheduler, loss_scheduler, criterion, device, config):
-    model.train()
-
+def train(model, dataloader, test_data, model_optimizer, loss_optimizer, model_scheduler, loss_scheduler, criterion, device, config):
     top_checkpoints = []
     for epoch in range(config.num_of_epoch):
+        model.train()
         running_loss = 0.0
 
         for bidx, data in enumerate(dataloader):
@@ -42,7 +42,10 @@ def train(model, dataloader, model_optimizer, loss_optimizer, model_scheduler, l
 
         checkpoint(model, model_optimizer, loss_optimizer, dataloader, criterion, top_checkpoints,
                    config, running_loss / len(dataloader), epoch, 0, permanent=True)
-        print("Epoch ", epoch, " completed with loss: ", running_loss / len(dataloader))
+
+        metrics = Metrics(model, test_data, config)
+        f1, acc = metrics.validate()
+        print("Checkpoint ", epoch, " | F1: ", f1, " | Accuracy: ", acc, " | Loss: ", running_loss / len(dataloader))
 
 
 def checkpoint(model, model_optimizer, criterion_optimizer, dataloader, criterion, top_checkpoints,
