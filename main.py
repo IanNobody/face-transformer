@@ -36,18 +36,18 @@ def start_training(model, dataset, data_sampler, config, classes):
     val_data = LFWDataset(transform=transforms(), device=config.device)
     val_dataloader = DataLoader(val_data, batch_size=configuration.batch_size, num_workers=16, shuffle=True, collate_fn=LFWDataset.collate_fn)
     criterion = losses.ArcFaceLoss(classes, 512).to(config.device)
-    model_optimizer = optim.Adam(model.parameters(), lr=0.0005)
-    loss_optimizer = optim.SGD(criterion.parameters(), lr=0.001)
+    model_optimizer = optim.Adam(model.parameters(), lr=0.00005)
+    loss_optimizer = optim.SGD(criterion.parameters(), lr=0.0001)
     load_checkpoint(model, model_optimizer, loss_optimizer, criterion, data_sampler.sampler, config)
     model_scheduler = lr_scheduler.OneCycleLR(
         model_optimizer,
-        max_lr=0.00005,
+        max_lr=0.000005,
         steps_per_epoch=len(data_sampler),
         epochs=config.num_of_epoch
     )
     loss_scheduler = lr_scheduler.OneCycleLR(
         loss_optimizer,
-        max_lr=0.001,
+        max_lr=0.00001,
         steps_per_epoch=len(data_sampler),
         epochs=config.num_of_epoch
     )
