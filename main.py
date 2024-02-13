@@ -36,21 +36,11 @@ def start_training(model, dataset, data_sampler, config, classes):
     val_data = LFWDataset(transform=transforms(), device=config.device)
     val_dataloader = DataLoader(val_data, batch_size=configuration.batch_size, num_workers=16, shuffle=True, collate_fn=LFWDataset.collate_fn)
     criterion = losses.ArcFaceLoss(classes, 512).to(config.device)
-    model_optimizer = optim.Adam(model.parameters(), lr=0.00005)
+    model_optimizer = optim.AdamW(model.parameters(), lr=0.00005)
     loss_optimizer = optim.SGD(criterion.parameters(), lr=0.0001)
     load_checkpoint(model, model_optimizer, loss_optimizer, criterion, data_sampler.sampler, config)
-    model_scheduler = lr_scheduler.OneCycleLR(
-        model_optimizer,
-        max_lr=0.000005,
-        steps_per_epoch=len(data_sampler),
-        epochs=config.num_of_epoch
-    )
-    loss_scheduler = lr_scheduler.OneCycleLR(
-        loss_optimizer,
-        max_lr=0.00001,
-        steps_per_epoch=len(data_sampler),
-        epochs=config.num_of_epoch
-    )
+    model_scheduler = lr_scheduler.CosineAnnealingLR(model_optimizer, config.num_of_epoch, eta_min=0.000005)
+    loss_scheduler = lr_scheduler.CosineAnnealingLR(loss_optimizer, config.num_of_epoch, 0.00001)
     train(model, dataloader, val_dataloader, model_optimizer, loss_optimizer, model_scheduler, loss_scheduler, criterion, config.device, config)
     print("Training succesfully finished.")
 
@@ -92,13 +82,13 @@ def augumentations():
     return alb.Compose([
         A.RandomFog(p=0.3),
         A.Equalize(mode="cv", by_channels=True, p=0.3),
-        A.RandomBrightness(p=0.3),
+        A.RandomBrightnessContrast(p=0.3),
         A.Sharpen(p=0.3),
-        A.RandomContrast(p=0.3)
+        A.Normalize()
     ])
 
 
-def dataset(args, device, transform):
+def dataset(args, device, transform, augumentation):
     datasets = []
 
     if args.vggface:
@@ -106,14 +96,16 @@ def dataset(args, device, transform):
             args.dataset_path,
             args.files_list,
             device=device,
-            transform=transform
+            transform=transform,
+            augmentation=augumentation
         ))
     elif args.celeba:
         datasets.append(CelebADataset(
             args.annotation_path,
             args.dataset_path,
             device=device,
-            transform=transform
+            transform=transform,
+            augumentation=augumentation
         ))
     elif args.lfw:
         datasets.append(LFWDataset(
@@ -211,7 +203,7 @@ if __name__ == '__main__':
         num_of_epoch=args.num_of_epoch
     )
 
-    dataset, num_of_classes = dataset(args, configuration.device, transforms())
+    dataset, num_of_classes = dataset(args, configuration.device, transforms(), augumentations())
     model = create_model(args, configuration, 512, num_of_classes)
     model = model.to(configuration.device)
 

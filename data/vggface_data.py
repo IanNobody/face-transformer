@@ -33,7 +33,7 @@ class VGGFaceDataset(Dataset):
             idx = idx.tolist()
 
         img_path = join(self.img_root, self.img[idx])
-        image = cv2.imread(img_path) / 255.0
+        image = cv2.imread(img_path)# / 255.0
         ann = torch.tensor(self.ann[idx])
 
         if self.augmentation:
