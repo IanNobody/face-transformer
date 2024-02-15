@@ -73,12 +73,16 @@ def remove_checkpoint(config, checkpoint_filename):
 
 
 def save_checkpoint(model, model_optimizer, criterion_optimizer, dataloader, criterion, config, filename):
-    torch.save({
-        'model_weights': model.state_dict(),
-        'model_optimizer': model_optimizer.state_dict(),
-        'loss_optimizer': criterion_optimizer.state_dict(),
-        'random_sampler': dataloader.batch_sampler.sampler.get_state(),
-        'loss': criterion.state_dict(),
-    }, join(config.export_weights_dir, filename))
+    try:
+        torch.save({
+            'model_weights': model.state_dict(),
+            'model_optimizer': model_optimizer.state_dict(),
+            'loss_optimizer': criterion_optimizer.state_dict(),
+            'random_sampler': dataloader.batch_sampler.sampler.get_state(),
+            'loss': criterion.state_dict(),
+        }, join(config.export_weights_dir, filename))
+    except Exception as exception:
+        print("> ERROR: Could not create a checkpoint.")
+        print("Description: ", exception)
 
 
