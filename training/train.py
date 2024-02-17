@@ -3,9 +3,15 @@ from datetime import datetime
 import torch
 from os.path import join
 from verification.metrics import Metrics
+import pytorch_warmup as warmup
 
+warmup_epochs = 10
 
 def train(model, dataloader, test_data, model_optimizer, loss_optimizer, model_scheduler, loss_scheduler, criterion, device, config):
+    warmup_period = int(len(dataloader) * warmup_epochs)
+    model_warmup = warmup.LinearWarmup(model_optimizer, warmup_period=warmup_period)
+    loss_warmup = warmup.LinearWarmup(loss_optimizer, warmup_period=warmup_period)
+
     top_checkpoints = []
     for epoch in range(config.num_of_epoch):
         model.train()
@@ -30,8 +36,14 @@ def train(model, dataloader, test_data, model_optimizer, loss_optimizer, model_s
             loss.backward()
             model_optimizer.step()
             loss_optimizer.step()
-            model_scheduler.step()
-            loss_scheduler.step()
+
+            with model_warmup.dampening():
+                if model_warmup.last_step + 1 >= warmup_period:
+                    model_scheduler.step()
+
+            with loss_warmup.dampening():
+                if loss_warmup.last_step + 1 >= warmup_period:
+                    loss_scheduler.step()
 
             current_loss = loss.item()
             running_loss += current_loss
