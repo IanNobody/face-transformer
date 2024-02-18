@@ -13,6 +13,7 @@ matplotlib = "*"
 tensorflow = "*"
 eer = "*"
 transformers = "*"
+lightning = "*"
 
 [dev-packages]
 
