@@ -31,11 +31,11 @@ from verification.metrics import Metrics
 
 torch.set_float32_matmul_precision('medium')
 
-warmup_epochs = 10
-max_model_lr = 5e-8
-min_model_lr = 5e-11
-max_crit_lr = 1e-7
-min_crit_lr = 1e-10
+warmup_epochs = 2
+max_model_lr = 5e-4
+min_model_lr = 5e-4
+max_crit_lr = 1e-5
+min_crit_lr = 1e-5
 embedding_size = 512
 
 def configure_training(model, num_of_classes, config):
