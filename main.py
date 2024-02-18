@@ -1,5 +1,4 @@
 import argparse
-
 import torch
 
 from models.DAT.dat import DAT
@@ -9,43 +8,74 @@ from models.BiFormer.biformer import biformer_base
 from models.CMT.cmt import cmt_b
 from models.NoisyViT.noisy_vit import vit_b
 from models.OpenCLIP.pretrained_openclip import OpenCLIPWrapper
-
+from models.LightningModule import LightningWrapper
+from pytorch_lightning import Trainer
+from pytorch_lightning.callbacks import ModelCheckpoint
 import torchvision.models as models
-from torch import optim
-from torch import device
-from torch import cuda
+
 from torch.utils.data import DataLoader, ConcatDataset
-from torch.optim import lr_scheduler
+from torch.optim import lr_scheduler, AdamW, SGD
+import pytorch_warmup as warmup
 from pytorch_metric_learning import losses
 import torch.nn as nn
 import torchvision.transforms as T
 import albumentations.augmentations.transforms as A
 import albumentations as alb
-from checkpointing.checkpoint import load_checkpoint
 
 from data.celeba_data import CelebADataset
 from data.vggface_data import VGGFaceDataset
 from data.lfw_data import LFWDataset
 from training.resumable_sampler import ResumableRandomSampler
-from training.train import train
 from training.train_config import TrainingConfiguration
 from verification.metrics import Metrics
 
+torch.set_float32_matmul_precision('medium')
 
-def start_training(model, dataset, data_sampler, config, classes):
-    val_data = LFWDataset(transform=transforms(), device=config.device)
-    val_dataloader = DataLoader(val_data, batch_size=configuration.batch_size, num_workers=16, shuffle=True, collate_fn=LFWDataset.collate_fn)
-    criterion = losses.ArcFaceLoss(classes, 512).to(config.device)
-    model_optimizer = optim.AdamW(model.parameters(), lr=5e-7)
-    loss_optimizer = optim.SGD(criterion.parameters(), lr=1e-6)
-    load_checkpoint(model, model_optimizer, loss_optimizer, criterion, data_sampler.sampler, config)
-    model_scheduler = lr_scheduler.CosineAnnealingLR(model_optimizer, config.num_of_epoch * len(dataloader) // 5, 5e-10)
-    loss_scheduler = lr_scheduler.CosineAnnealingLR(loss_optimizer, config.num_of_epoch * len(dataloader) // 5, 1e-9)
-    train(model, dataloader, val_dataloader, model_optimizer, loss_optimizer, model_scheduler, loss_scheduler, criterion, config.device, config)
-    print("Training succesfully finished.")
+warmup_epochs = 10
+max_model_lr = 5e-8
+min_model_lr = 5e-11
+max_crit_lr = 1e-7
+min_crit_lr = 1e-10
+embedding_size = 512
+
+def configure_training(model, num_of_classes, config):
+    warmup_period = int(len(dataloader) * warmup_epochs)
+
+    model_optimizer = AdamW(model.parameters(), lr=max_model_lr)
+    model_scheduler = lr_scheduler.CosineAnnealingLR(model_optimizer,
+                                                     config.num_of_epoch * len(dataloader) // 5, min_model_lr)
+    model_warmup = warmup.LinearWarmup(model_optimizer, warmup_period=warmup_period)
+
+    criterion = losses.ArcFaceLoss(num_of_classes, embedding_size)
+    criterion_optimizer = SGD(criterion.parameters(), lr=max_crit_lr)
+    criterion_scheduler = lr_scheduler.CosineAnnealingLR(criterion_optimizer,
+                                                         config.num_of_epoch * len(dataloader) // 5, min_crit_lr)
+    criterion_warmup = warmup.LinearWarmup(criterion_optimizer, warmup_period=warmup_period)
+
+    return (warmup_period, model_optimizer, model_scheduler, model_warmup,
+            criterion, criterion_optimizer, criterion_scheduler, criterion_warmup)
+
+
+def start_training(model, dataloader, val_dataloader, config, classes):
+    warmup_per, opt, sched, warmup, crit, crit_opt, crit_sched, crit_warmup = configure_training(model, classes, config)
+    lightning_model = LightningWrapper(model, opt, sched, warmup,
+                                       crit, crit_opt, crit_sched, crit_warmup,
+                                       warmup_per, len(dataloader), config)
+    checkpointer = ModelCheckpoint(
+        dirpath=config.export_weights_dir,
+        filename='checkpoint-{epoch:02d}-{val_loss:.2f}',
+        monitor='val_loss',
+        save_top_k=10,
+        mode='min'
+    )
+    trainer = Trainer(max_epochs=config.num_of_epoch, callbacks=[checkpointer], accelerator="gpu", devices=config.device)
+    trainer.fit(lightning_model, dataloader, val_dataloader)
+    print("Training successfully finished.")
+
 
 def count_parameters(model):
     return sum(p.numel() for p in model.parameters() if p.requires_grad)
+
 
 def print_config_sumup(config, dataset, model, num_of_classes):
     print("*****************************************************")
@@ -88,32 +118,28 @@ def augumentations():
     ])
 
 
-def dataset(args, device, transform, augumentation):
+def dataset(args, transform, augmentation):
     datasets = []
 
     if args.vggface:
         datasets.append(VGGFaceDataset(
             args.dataset_path,
             args.files_list,
-            device=device,
             transform=transform,
-            augmentation=augumentation
+            augmentation=augmentation
         ))
     elif args.celeba:
         datasets.append(CelebADataset(
             args.annotation_path,
             args.dataset_path,
-            device=device,
             transform=transform,
-            augumentation=augumentation
+            augumentation=augmentation
         ))
     elif args.lfw:
-        datasets.append(LFWDataset(
-            transform=transform,
-            device=device
-        ))
+        datasets.append(LFWDataset(transform=transform))
 
     return ConcatDataset(datasets), sum([d.num_of_classes() for d in datasets])
+
 
 def create_model(args, configuration, embedding_size, num_of_classes):
     model = None
@@ -151,7 +177,7 @@ def create_model(args, configuration, embedding_size, num_of_classes):
         model.head = nn.Linear(model.head.in_features, embedding_size)
     elif args.openclip:
         configuration.model_name = "openclip"
-        model = OpenCLIPWrapper(configuration.device)
+        model = OpenCLIPWrapper()
 
     return model
 
@@ -186,33 +212,37 @@ if __name__ == '__main__':
     parser.add_argument("--checkpoints_dir", type=str, help="Path where to save checkpoints", default="./")
     parser.add_argument("-b", "--batch_size", type=int, help="Minibatch size", default=32)
     parser.add_argument("-e", "--num_of_epoch", type=int, help="Number of epochs", default=50)
-    parser.add_argument("--checkpoint_path", type=str, help="Path to the checkpoint file or directory of checkpoints", default=None)
+    parser.add_argument("--checkpoint_path", type=str,
+                        help="Path to the checkpoint file or directory of checkpoints", default=None)
     parser.add_argument("--output_dir", type=str, help="Path where to store model statistics", default=None)
-    parser.add_argument("--gpu", type=int, help="Which GPU unit to use (default is 0)", default=0)
+    parser.add_argument("--gpu", nargs='+', type=int, help="Which GPU unit to use (default is 0)", default=0)
 
     args = parser.parse_args()
 
     configuration = TrainingConfiguration(
         model_name=None,
-        device=device("cuda:" + str(args.gpu) if cuda.is_available() else "cpu"),
+        device=args.gpu,
         checkpoint_count=args.checkpoint_count,
         checkpoint_freq=args.checkpoint_freq,
         export_weights_dir=args.checkpoints_dir,
         checkpoint_path=args.checkpoint_path,
-        batch_size=int(args.batch_size / 5),
+        batch_size=args.batch_size,
         num_of_epoch=args.num_of_epoch
     )
 
-    dataset, num_of_classes = dataset(args, configuration.device, transforms(), augumentations())
-    model = create_model(args, configuration, 512, num_of_classes)
-    model = model.to(configuration.device)
+    dataset, num_of_classes = dataset(args, transforms(), augumentations())
+    model = create_model(args, configuration, embedding_size, num_of_classes)
 
     if not args.eval:
         data_sampler = ResumableRandomSampler(dataset, configuration)
         dataloader = DataLoader(dataset, batch_size=configuration.batch_size, sampler=data_sampler, num_workers=5)
+        val_data = LFWDataset(transform=transforms())
+        val_dataloader = DataLoader(val_data, batch_size=configuration.batch_size,
+                                    num_workers=16, collate_fn=LFWDataset.collate_fn)
         print_config_sumup(configuration, dataset, model, num_of_classes)
-        start_training(model, dataset, dataloader, configuration, num_of_classes)
+        start_training(model, dataloader, val_dataloader, configuration, num_of_classes)
     else:
-        dataloader = DataLoader(dataset, batch_size=configuration.batch_size, num_workers=16, shuffle=True, collate_fn=LFWDataset.collate_fn)
+        dataloader = DataLoader(dataset, batch_size=configuration.batch_size, num_workers=16,
+                                shuffle=True, collate_fn=LFWDataset.collate_fn)
         metrics = Metrics(model, dataloader, configuration)
         metrics.test_all_weights(configuration.checkpoint_path, args.output_dir, model)
