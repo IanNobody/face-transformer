@@ -64,11 +64,12 @@ def start_training(model, dataloader, val_dataloader, config, classes):
     checkpointer = ModelCheckpoint(
         dirpath=config.export_weights_dir,
         filename='checkpoint-{epoch:02d}-{val_loss:.2f}',
-        monitor='val_loss',
+        monitor='valid_acc_epoch',
         save_top_k=10,
         mode='min'
     )
-    trainer = Trainer(max_epochs=config.num_of_epoch, callbacks=[checkpointer], accelerator="gpu", devices=config.device)
+    trainer = Trainer(max_epochs=config.num_of_epoch, callbacks=[checkpointer],
+                      accelerator="gpu", devices=config.device, )
     trainer.fit(lightning_model, dataloader, val_dataloader)
     print("Training successfully finished.")
 

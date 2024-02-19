@@ -62,7 +62,7 @@ class LightningWrapper(L.LightningModule):
             if self.criterion_warmup.last_step + 1 >= self.warmup_period:
                 crit_sched.step()
 
-        self.log("val_loss", loss)
+        self.log("val_loss", loss, prog_bar=True)
         return { "val_loss": loss }
 
     def validation_step(self, batch, _):
@@ -74,10 +74,6 @@ class LightningWrapper(L.LightningModule):
         embedding2 = self(img2).cpu()
 
         similarity = [_similarity(em1, em2) for em1, em2 in zip(embedding1, embedding2)]
-
-        if not len(similarity) == len(label):
-            print("Emb1: ", len(embedding1), "; emb2: ", len(embedding2))
-            print("Similarity ", len(similarity), " (", len(img1), "x", len(img2), ") not same as label ", len(label))
 
         self.val_sims.extend(similarity)
         self.val_gts.extend(label)
@@ -97,7 +93,8 @@ class LightningWrapper(L.LightningModule):
 
         self.val_sims = []
         self.val_gts = []
-        return f1_score(all_targets, all_outputs)
+
+        self.log('valid_acc_epoch', f1_score(all_targets, all_outputs), prog_bar=True, sync_dist=True)
 
     def configure_optimizers(self):
         return [self.model_optim, self.criterion_optim], [
