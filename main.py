@@ -9,6 +9,7 @@ from models.BiFormer.biformer import biformer_base
 from models.CMT.cmt import cmt_b
 from models.NoisyViT.noisy_vit import vit_b
 from models.OpenCLIP.pretrained_openclip import OpenCLIPWrapper
+from models.OpenCLIP.multitask_openclip import MultitaskOpenCLIP
 
 import torchvision.models as models
 from torch import optim
@@ -152,6 +153,9 @@ def create_model(args, configuration, embedding_size, num_of_classes):
     elif args.openclip:
         configuration.model_name = "openclip"
         model = OpenCLIPWrapper(configuration.device)
+    elif args.multitask_openclip:
+        configuration.model_name = "multitask_openclip"
+        model = MultitaskOpenCLIP(configuration.device)
 
     return model
 
@@ -171,6 +175,8 @@ if __name__ == '__main__':
     model_group.add_argument("--cmt", action="store_true", help="Use CMT ViT-CNN hybrid model")
     model_group.add_argument("--noisy_vit", action="store_true", help="Use Noisy ViT model")
     model_group.add_argument("--openclip", action="store_true", help="Use OpenAI CLIP model")
+    model_group.add_argument("--multitask_openclip", action="store_true",
+                             help="Use OpenAI CLIP model with multitask learning")
 
     dataset_group = parser.add_argument_group()
     dataset_group.add_argument("--celeba", action="store_true", help="Use CelebA dataset")
