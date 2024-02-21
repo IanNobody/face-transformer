@@ -32,13 +32,13 @@ from training.train_config import TrainingConfiguration
 from verification.metrics import Metrics
 
 
-def start_training(model, dataset, data_sampler, config, classes):
+def start_training(model, dataset, dataloader, config, classes):
     val_data = LFWDataset(transform=transforms(), device=config.device)
     val_dataloader = DataLoader(val_data, batch_size=configuration.batch_size, num_workers=16, shuffle=True, collate_fn=LFWDataset.collate_fn)
     criterion = losses.ArcFaceLoss(classes, 512).to(config.device)
     model_optimizer = optim.AdamW(model.parameters(), lr=5e-7)
     loss_optimizer = optim.SGD(criterion.parameters(), lr=1e-6)
-    load_checkpoint(model, model_optimizer, loss_optimizer, criterion, data_sampler.sampler, config)
+    load_checkpoint(model, model_optimizer, loss_optimizer, criterion, dataloader.sampler, config)
     model_scheduler = lr_scheduler.CosineAnnealingLR(model_optimizer, config.num_of_epoch * len(dataloader) // 5, 5e-10)
     loss_scheduler = lr_scheduler.CosineAnnealingLR(loss_optimizer, config.num_of_epoch * len(dataloader) // 5, 1e-9)
     train(model, dataloader, val_dataloader, model_optimizer, loss_optimizer, model_scheduler, loss_scheduler, criterion, config.device, config)
