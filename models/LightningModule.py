@@ -2,28 +2,31 @@ import pytorch_lightning as L
 import torch
 from sklearn.metrics import roc_curve, f1_score
 import numpy as np
+from torch.optim import lr_scheduler, AdamW, SGD
+import pytorch_warmup as warmup
 
 def _similarity(x, y):
     return np.dot(x, y) / (np.linalg.norm(x) * np.linalg.norm(y))
 
 class LightningWrapper(L.LightningModule):
-    def __init__(self, model, model_optim, model_sched, model_warmup,
-                 criterion, criterion_optim, criterion_sched, criterion_warmup,
-                 warmup_period, num_batches, config):
+    def __init__(self, model, max_model_lr, min_model_lr,
+                 criterion, max_crit_lr, min_cri_lr,
+                 warmup_period, total_batches, config):
         super(LightningWrapper, self).__init__()
+
         self.model = model
-        self.model_optim = model_optim
-        self.model_sched = model_sched
-        self.model_warmup = model_warmup
+        self.max_model_lr = max_model_lr
+        self.min_model_lr = min_model_lr
+        self.model_warmup = None
 
         self.criterion = criterion
-        self.criterion_optim = criterion_optim
-        self.criterion_sched = criterion_sched
-        self.criterion_warmup = criterion_warmup
+        self.max_crit_lr = max_crit_lr
+        self.min_crit_lr = min_cri_lr
+        self.criterion_warmup = None
 
         self.warmup_period = warmup_period
         self.config = config
-        self.num_batches = num_batches
+        self.total_batches = total_batches
 
         self.val_sims = []
         self.val_gts = []
@@ -62,8 +65,9 @@ class LightningWrapper(L.LightningModule):
             if self.criterion_warmup.last_step + 1 >= self.warmup_period:
                 crit_sched.step()
 
-        self.log("val_loss", loss, prog_bar=True)
-        return { "val_loss": loss }
+        self.log("train_loss", loss, prog_bar=True)
+        self.log("model_lr", model_sched.get_last_lr()[0], prog_bar=True)
+        self.log("crit_lr", crit_sched.get_last_lr()[0], prog_bar=True)
 
     def validation_step(self, batch, _):
         img1 = batch["img1"]
@@ -97,13 +101,25 @@ class LightningWrapper(L.LightningModule):
         self.log('valid_acc_epoch', f1_score(all_targets, all_outputs), prog_bar=True, sync_dist=True)
 
     def configure_optimizers(self):
-        return [self.model_optim, self.criterion_optim], [
+        model_optimizer = AdamW(self.model.parameters(), lr=self.max_model_lr)
+        model_scheduler = lr_scheduler.CosineAnnealingLR(model_optimizer,
+                                                         self.total_batches // 5,
+                                                         self.min_model_lr)
+        criterion_optimizer = SGD(self.criterion.parameters(), lr=self.max_crit_lr)
+        criterion_scheduler = lr_scheduler.CosineAnnealingLR(criterion_optimizer,
+                                                             self.total_batches // 5,
+                                                             self.min_crit_lr)
+
+        self.model_warmup = warmup.LinearWarmup(model_optimizer, warmup_period=self.warmup_period)
+        self.criterion_warmup = warmup.LinearWarmup(criterion_optimizer, warmup_period=self.warmup_period)
+
+        return [model_optimizer, criterion_optimizer], [
             {
-                'scheduler': self.model_sched,
+                'scheduler': model_scheduler,
                 'interval': 'step'
             },
             {
-                'scheduler': self.criterion_sched,
+                'scheduler': criterion_scheduler,
                 'interval': 'step'
             }
         ]

@@ -14,8 +14,6 @@ from pytorch_lightning.callbacks import ModelCheckpoint
 import torchvision.models as models
 
 from torch.utils.data import DataLoader, ConcatDataset
-from torch.optim import lr_scheduler, AdamW, SGD
-import pytorch_warmup as warmup
 from pytorch_metric_learning import losses
 import torch.nn as nn
 import torchvision.transforms as T
@@ -38,29 +36,14 @@ max_crit_lr = 1e-7
 min_crit_lr = 1e-10
 embedding_size = 512
 
-def configure_training(model, num_of_classes, config):
-    warmup_period = int(len(dataloader) * warmup_epochs)
-
-    model_optimizer = AdamW(model.parameters(), lr=max_model_lr)
-    model_scheduler = lr_scheduler.CosineAnnealingLR(model_optimizer,
-                                                     config.num_of_epoch * len(dataloader) // 5, min_model_lr)
-    model_warmup = warmup.LinearWarmup(model_optimizer, warmup_period=warmup_period)
-
-    criterion = losses.ArcFaceLoss(num_of_classes, embedding_size)
-    criterion_optimizer = SGD(criterion.parameters(), lr=max_crit_lr)
-    criterion_scheduler = lr_scheduler.CosineAnnealingLR(criterion_optimizer,
-                                                         config.num_of_epoch * len(dataloader) // 5, min_crit_lr)
-    criterion_warmup = warmup.LinearWarmup(criterion_optimizer, warmup_period=warmup_period)
-
-    return (warmup_period, model_optimizer, model_scheduler, model_warmup,
-            criterion, criterion_optimizer, criterion_scheduler, criterion_warmup)
-
 
 def start_training(model, dataloader, val_dataloader, config, classes):
-    warmup_per, opt, sched, warmup, crit, crit_opt, crit_sched, crit_warmup = configure_training(model, classes, config)
-    lightning_model = LightningWrapper(model, opt, sched, warmup,
-                                       crit, crit_opt, crit_sched, crit_warmup,
-                                       warmup_per, len(dataloader), config)
+    criterion = losses.ArcFaceLoss(num_of_classes, embedding_size)
+    warmup_period = int(len(dataloader) * warmup_epochs)
+    total_batches = config.num_of_epoch * len(dataloader)
+
+    lightning_model = LightningWrapper(model, max_model_lr, min_model_lr, criterion, max_crit_lr, min_crit_lr,
+                                       warmup_period, total_batches, config)
     checkpointer = ModelCheckpoint(
         dirpath=config.export_weights_dir,
         filename='checkpoint-{epoch:02d}-{val_loss:.2f}',
@@ -68,8 +51,9 @@ def start_training(model, dataloader, val_dataloader, config, classes):
         save_top_k=10,
         mode='min'
     )
-    trainer = Trainer(max_epochs=config.num_of_epoch, callbacks=[checkpointer],
-                      accelerator="gpu", devices=config.device, )
+    trainer = Trainer(max_epochs=config.num_of_epoch,
+                      callbacks=[checkpointer],
+                      accelerator="gpu", devices=config.device)
     trainer.fit(lightning_model, dataloader, val_dataloader)
     print("Training successfully finished.")
 
