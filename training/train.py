@@ -26,9 +26,6 @@ def train(model, dataloader, test_data, model_optimizer, loss_optimizer, model_s
 
             if config.model_name == "dat":
                 out = model(x)[0]
-            # elif config.model_name == "openclip":
-            #     label = ["human face for recognition" for _ in range(len(x))]
-            #     out = model(x, label).image_embeds
             else:
                 out = model(x)
 

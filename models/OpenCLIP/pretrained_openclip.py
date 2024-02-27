@@ -3,7 +3,7 @@ from transformers import CLIPProcessor, CLIPModel
 
 
 class OpenCLIPWrapper(nn.Module):
-    def __init__(self, device):
+    def __init__(self, device=None):
         super(OpenCLIPWrapper, self).__init__()
         self.device = device
         self.clip_vision = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").vision_model
