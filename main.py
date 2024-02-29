@@ -24,37 +24,35 @@ import albumentations as alb
 from data.celeba_data import CelebADataset
 from data.vggface_data import VGGFaceDataset
 from data.lfw_data import LFWDataset
-from training.resumable_sampler import ResumableRandomSampler
-from training.train_config import TrainingConfiguration
+from train_utils.resumable_sampler import ResumableRandomSampler
+from train_utils.train_config import TrainingConfiguration
 from verification.metrics import Metrics
 
 torch.set_float32_matmul_precision('medium')
 
 warmup_epochs = 10
-max_model_lr = 5e-8
-min_model_lr = 5e-11
-max_crit_lr = 1e-7
-min_crit_lr = 1e-10
+max_model_lr = 1e-6
+min_model_lr = 5e-9
+max_crit_lr = 3e-6
+min_crit_lr = 1.5e-8
 embedding_size = 512
-
 
 def start_training(model, dataloader, val_dataloader, config, classes):
     criterion = losses.ArcFaceLoss(num_of_classes, embedding_size)
-    warmup_period = int(len(dataloader) * warmup_epochs)
-    total_batches = config.num_of_epoch * len(dataloader)
 
     lightning_model = LightningWrapper(model, max_model_lr, min_model_lr, criterion, max_crit_lr, min_crit_lr,
-                                       warmup_period, total_batches, config)
+                                       warmup_epochs, len(dataloader), config)
     checkpointer = ModelCheckpoint(
         dirpath=config.export_weights_dir,
         filename='checkpoint-{epoch:02d}-{val_loss:.2f}',
-        monitor='valid_acc_epoch',
+        monitor='acc',
         save_top_k=10,
-        mode='min'
+        mode='max'
     )
     trainer = Trainer(max_epochs=config.num_of_epoch,
                       callbacks=[checkpointer],
-                      accelerator="gpu", devices=config.device)
+                      # strategy='ddp_find_unused_parameters_true'
+                      accelerator="auto", devices=config.device)
     trainer.fit(lightning_model, dataloader, val_dataloader)
     print("Training successfully finished.")
 
@@ -166,7 +164,7 @@ def create_model(args, configuration, embedding_size, num_of_classes):
         model = OpenCLIPWrapper()
     elif args.multitask_openclip:
         configuration.model_name = "multitask_openclip"
-        model = MultitaskOpenCLIP(configuration.device)
+        model = MultitaskOpenCLIP(configuration.device, num_of_classes)
 
     return model
 
@@ -229,7 +227,7 @@ if __name__ == '__main__':
         dataloader = DataLoader(dataset, batch_size=configuration.batch_size, sampler=data_sampler, num_workers=5)
         val_data = LFWDataset(transform=transforms())
         val_dataloader = DataLoader(val_data, batch_size=configuration.batch_size,
-                                    num_workers=16, collate_fn=LFWDataset.collate_fn)
+                                    num_workers=8, collate_fn=LFWDataset.collate_fn)
         print_config_sumup(configuration, dataset, model, num_of_classes)
         start_training(model, dataloader, val_dataloader, configuration, num_of_classes)
     else:

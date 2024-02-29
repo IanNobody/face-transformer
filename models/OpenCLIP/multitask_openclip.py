@@ -1,24 +1,49 @@
 import torch.nn as nn
 from transformers import CLIPProcessor, CLIPModel
-
+import open_clip
+import torch
 
 class MultitaskOpenCLIP(nn.Module):
-    age_bins = 11
-    bin_size = 10
-
-    def __init__(self, device):
+    def __init__(self, device, num_classes):
         super(MultitaskOpenCLIP, self).__init__()
 
         self.device = device
-        self.clip_vision = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").vision_model
+        # self.model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").vision_model
+        # self.processor = CLIPProcessor.from_pretrained("hf-hub:laion/CLIP-ViT-B-32-DataComp.M-s128M-b4K")
 
-        self.embed_fc = nn.Linear(768, 512)
-        self.gender_fc = nn.Linear(768, 1)
-        self.age_fc = nn.Linear(768, self.age_bins)
+        self.model, _, _ = open_clip.create_model_and_transforms('hf-hub:laion/CLIP-ViT-B-32-DataComp.M-s128M-b4K')
 
-    def forward(self, x):
-        y = self.clip_vision(x).pooler_output
-        embed = self.fc(y)
-        gender = self.gender_fc(y)
-        age = self.age_fc(y)
-        return {"embedding": embed, "gender": gender, "age": age}
+        self.model.transformer.requires_grad_(False)
+        self.model.positional_embedding.requires_grad_(False)
+        self.model.text_projection.requires_grad_(False)
+        self.model.logit_scale.requires_grad_(False)
+        self.model.token_embedding.weight.requires_grad_(False)
+        self.model.ln_final.weight.requires_grad_(False)
+        self.model.ln_final.bias.requires_grad_(False)
+
+        self.embed_fc = nn.Linear(512, 512)
+        self.class_fc = nn.Linear(512, num_classes)
+        self.gender_fc = nn.Linear(512, 1)
+        self.hair_fc = nn.Linear(512, 4)
+        self.glasses_fc = nn.Linear(512, 2)
+        self.mustache_fc = nn.Linear(512, 1)
+        self.hat_fc = nn.Linear(512, 1)
+        self.open_mouth_fc = nn.Linear(512, 1)
+        self.long_hair_fc = nn.Linear(512, 1)
+
+    def forward(self, x, textual_prompt):
+        y = self.model(text=textual_prompt, image=x)[0]
+
+        embed = self.embed_fc(y)
+        cls = self.class_fc(y)
+
+        gender = self.gender_fc(y).squeeze()
+        hair = self.hair_fc(y)
+        glasses = self.glasses_fc(y)
+        mustache = self.mustache_fc(y).squeeze()
+        hat = self.hat_fc(y).squeeze()
+        open_mouth = self.open_mouth_fc(y).squeeze()
+        long_hair = self.long_hair_fc(y).squeeze()
+
+        return {"embedding": embed, "class": cls, "gender": gender, "hair": hair, "glasses": glasses, "mustache": mustache,
+                "hat": hat, "open_mouth": open_mouth, "long_hair": long_hair,  "gender": gender}
