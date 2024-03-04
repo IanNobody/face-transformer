@@ -113,9 +113,6 @@ class LightningWrapper(L.LightningModule):
         model_opt, crit_opt = self.optimizers()
         model_sched, crit_sched = self.lr_schedulers()
 
-        model_opt.zero_grad()
-        crit_opt.zero_grad()
-
         x = batch["image"]
         txt = batch["textual_prompt"]
         gt = batch["annotation"]
@@ -124,16 +121,23 @@ class LightningWrapper(L.LightningModule):
         loss = self._custom_loss_call(out, gt)
         self.manual_backward(loss)
 
-        # before = self.model.embed_fc.weight.clone()
-        model_opt.step()
-        crit_opt.step()
-        # after = self.model.embed_fc.weight.clone()
+        # before_model = copy.deepcopy(self.model.model.state_dict())
+        # before_criterion = copy.deepcopy(self.criterion.state_dict().copy())
+        # before_fc = copy.deepcopy(self.model.embed_fc.state_dict().copy())
+        if (batch_idx + 1) % 2 == 0:
+            model_opt.step()
+            crit_opt.step()
+            model_opt.zero_grad()
+            crit_opt.zero_grad()
+        # after_model = copy.deepcopy(self.model.model.state_dict().copy())
+        # after_criterion = copy.deepcopy(self.criterion.state_dict().copy())
+        # after_fc = copy.deepcopy(self.model.embed_fc.state_dict().copy())
 
-        # compare all elements of the two tensors
-        # if torch.equal(before.data, after.data):
-        #     print("The weights didnt change")
-        # else:
-        #     print("The weights changed by average: ", torch.mean(torch.abs(before - after)))
+        # self.check_weights_changed(before_model.items(), after_model.items(), "MODEL")
+        # self.check_weights_changed(before_criterion.items(), after_criterion.items(), "CRITERION")
+        #
+        # if self.current_objective == "embed_fc":
+        #     self.check_weights_changed(before_fc.items(), after_fc.items(), "EMBEDDING LAYER")
 
         with self.model_warmup.dampening():
             if self.model_warmup.last_step + 1 >= (self.num_batches * self.warmup_epochs):
@@ -145,6 +149,21 @@ class LightningWrapper(L.LightningModule):
 
         self.log("loss", loss, prog_bar=True)
         self.log("lr", model_opt.param_groups[0]['lr'], prog_bar=True)
+
+    def check_weights_changed(self, before, after, tgt):
+        same = 0
+        different = 0
+
+        for name_b, param_b in before:
+            for name_a, param_a in after:
+                if name_b == name_a:
+                    if torch.equal(param_b, param_a):
+                        print(tgt, " ", name_a)
+                        same += 1
+                    else:
+                        different += 1
+
+        print(different, " changed and ", same , " stayed the same in ", tgt, ".")
 
     def _custom_loss_call(self, out, gt):
         if self.current_objective == "gender":
