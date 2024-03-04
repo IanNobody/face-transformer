@@ -30,11 +30,11 @@ from verification.metrics import Metrics
 
 torch.set_float32_matmul_precision('medium')
 
-warmup_epochs = 10
-max_model_lr = 1e-6
-min_model_lr = 5e-9
-max_crit_lr = 3e-6
-min_crit_lr = 1.5e-8
+warmup_epochs = 1
+max_model_lr = 1e-5
+min_model_lr = 5e-7
+max_crit_lr = 4e-5
+min_crit_lr = 1e-6
 embedding_size = 512
 
 
