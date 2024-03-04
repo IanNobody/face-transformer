@@ -4,6 +4,10 @@ from sklearn.metrics import roc_curve, f1_score
 import numpy as np
 from torch.optim import lr_scheduler, AdamW, SGD
 import pytorch_warmup as warmup
+import copy
+from PIL import Image
+import torchvision.transforms.functional as TF
+import random
 
 def _similarity(x, y):
     return np.dot(x, y) / (np.linalg.norm(x) * np.linalg.norm(y))
@@ -55,38 +59,55 @@ class LightningWrapper(L.LightningModule):
             return self.model(x)
 
     def on_train_epoch_start(self):
+        model_opt, crit_opt = self.optimizers()
+        model_opt.zero_grad()
+        crit_opt.zero_grad()
         if self.trainer.current_epoch < self.warmup_epochs:
-            self.unfreeze_layer(["embed_fc", "class_fc"])
+            self.unfreeze_layer(["embed_fc"])
             self.current_objective = "recognition"
-        elif (self.trainer.current_epoch - self.warmup_epochs) % 20 < 15:
-            epoch = (self.trainer.current_epoch - self.warmup_epochs) % 14
-            if epoch % 14 == 0:
+            self.log("obj", 0, prog_bar=True)
+        elif (self.trainer.current_epoch - self.warmup_epochs) % 20 < 16:
+            epoch = (self.trainer.current_epoch - self.warmup_epochs) % 20 % 16
+            if epoch % 16 == 0:
                 self.unfreeze_layer(["gender_fc"])
                 self.current_objective = "gender"
-            elif epoch % 14 in [1, 3, 5, 7, 9, 11, 13]:
-                self.unfreeze_layer(["embed_fc", "class_fc"])
+                self.log("obj", 1, prog_bar=True)
+            elif epoch % 16 in [1, 3, 5, 7, 9, 11, 13, 15]:
+                self.unfreeze_layer(["embed_fc"])
                 self.current_objective = "recognition"
-            elif epoch % 14 == 2:
+                self.log("obj", 2, prog_bar=True)
+            elif epoch % 16 == 2:
                 self.unfreeze_layer(["hair_fc"])
                 self.current_objective = "hair_color"
-            elif epoch % 14 == 4:
+                self.log("obj", 3, prog_bar=True)
+            elif epoch % 16 == 4:
                 self.unfreeze_layer(["glasses_fc"])
                 self.current_objective = "glasses"
-            elif epoch % 14 == 6:
+                self.log("obj", 4, prog_bar=True)
+            elif epoch % 16 == 6:
                 self.unfreeze_layer(["mustache_fc"])
                 self.current_objective = "mustache"
-            elif epoch % 14 == 8:
+                self.log("obj", 5, prog_bar=True)
+            elif epoch % 16 == 8:
                 self.unfreeze_layer(["hat_fc"])
                 self.current_objective = "hat"
-            elif epoch % 14 == 10:
+                self.log("obj", 6, prog_bar=True)
+            elif epoch % 16 == 10:
                 self.unfreeze_layer(["open_mouth_fc"])
                 self.current_objective = "open_mouth"
-            elif epoch % 14 == 12:
+                self.log("obj", 7, prog_bar=True)
+            elif epoch % 16 == 12:
                 self.unfreeze_layer(["long_hair_fc"])
                 self.current_objective = "long_hair"
+                self.log("obj", 8, prog_bar=True)
+            elif epoch % 16 == 14:
+                self.unfreeze_layer(["class_fc"])
+                self.current_objective = "classification"
+                self.log("obj", 9, prog_bar=True)
         else:
-            self.unfreeze_layer(["embed_fc", "class_fc"])
+            self.unfreeze_layer(["embed_fc"])
             self.current_objective = "recognition"
+            self.log("obj", 0, prog_bar=True)
 
     def training_step(self, batch, batch_idx):
         model_opt, crit_opt = self.optimizers()
@@ -126,54 +147,42 @@ class LightningWrapper(L.LightningModule):
         self.log("lr", model_opt.param_groups[0]['lr'], prog_bar=True)
 
     def _custom_loss_call(self, out, gt):
-        loss = self.criterion(out["embedding"], gt["class"]) * 0.79
-        loss += self.classification_criterion(out["class"], gt["class"]) * 0.1
-        loss += self.gender_criterion(out["gender"], gt["gender"]) * 0.05
-        loss += self.hair_color_criterion(out["hair"], gt["hair"]) * 0.01
-        loss += self.glasses_criterion(out["glasses"], gt["glasses"]) * 0.01
-        loss += self.mustache_criterion(out["mustache"], gt["mustache"]) * 0.01
-        loss += self.hat_criterion(out["hat"], gt["hat"]) * 0.01
-        loss += self.open_mouth_criterion(out["open_mouth"], gt["open_mouth"]) * 0.01
-        loss += self.long_hair_criterion(out["long_hair"], gt["long_hair"]) * 0.01
+        if self.current_objective == "gender":
+            loss = self.gender_criterion(out["gender"], gt["gender"])
+        elif self.current_objective == "hair_color":
+            loss = self.hair_color_criterion(out["hair"], gt["hair"])
+        elif self.current_objective == "glasses":
+            loss = self.glasses_criterion(out["glasses"], gt["glasses"])
+        elif self.current_objective == "mustache":
+            loss = self.mustache_criterion(out["mustache"], gt["mustache"])
+        elif self.current_objective == "hat":
+            loss = self.hat_criterion(out["hat"], gt["hat"])
+        elif self.current_objective == "open_mouth":
+            loss = self.open_mouth_criterion(out["open_mouth"], gt["open_mouth"])
+        elif self.current_objective == "long_hair":
+            loss = self.long_hair_criterion(out["long_hair"], gt["long_hair"])
+        elif self.current_objective == "classification":
+            loss = self.classification_criterion(out["class"], gt["class"])
+        else:
+            loss = self.criterion(out["embedding"], gt["class"])
+
         return loss
 
-    # def _custom_loss_call(self, out, gt):
-    #     if self.current_objective == "gender":
-    #         loss = self.gender_criterion(out["gender"], gt["gender"])
-    #     elif self.current_objective == "hair_color":
-    #         loss = self.hair_color_criterion(out["hair"], gt["hair"])
-    #     elif self.current_objective == "glasses":
-    #         loss = self.glasses_criterion(out["glasses"], gt["glasses"])
-    #     elif self.current_objective == "mustache":
-    #         loss = self.mustache_criterion(out["mustache"], gt["mustache"])
-    #     elif self.current_objective == "hat":
-    #         loss = self.hat_criterion(out["hat"], gt["hat"])
-    #     elif self.current_objective == "open_mouth":
-    #         loss = self.open_mouth_criterion(out["open_mouth"], gt["open_mouth"])
-    #     elif self.current_objective == "long_hair":
-    #         loss = self.long_hair_criterion(out["long_hair"], gt["long_hair"])
-    #     else:
-    #         loss = self.criterion(out["embedding"], gt["class"]) * 0.8
-    #         loss += self.classification_criterion(out["class"], gt["class"]) * 0.2
-    #
-    #     return loss
-
     def unfreeze_layer(self, target):
-        pass
-        # layers = {name: module for name, module in self.model.named_modules() if '.' not in name}
-        # layers.pop('model')
-        # layers.pop('')
-        #
-        # if "embed_fc" in target:
-        #     self.criterion.W.requires_grad_(True)
-        # else:
-        #     self.criterion.W.requires_grad_(False)
-        #
-        # for name in layers:
-        #     if name in target:
-        #         layers[name].weight.requires_grad_(True)
-        #     else:
-        #         layers[name].weight.requires_grad_(False)
+        layers = {name: module for name, module in self.model.named_modules() if '.' not in name}
+        layers.pop('model')
+        layers.pop('')
+
+        if "embed_fc" in target:
+            self.criterion.W.requires_grad_(True)
+        else:
+            self.criterion.W.requires_grad_(False)
+
+        for name in layers:
+            if name in target:
+                layers[name].weight.requires_grad_(True)
+            else:
+                layers[name].weight.requires_grad_(False)
 
     def validation_step(self, batch, _):
         img1 = batch["img1"]
