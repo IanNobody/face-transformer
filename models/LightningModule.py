@@ -9,9 +9,9 @@ def _similarity(x, y):
     return np.dot(x, y) / (np.linalg.norm(x) * np.linalg.norm(y))
 
 class LightningWrapper(L.LightningModule):
-    def __init__(self, model, max_model_lr, min_model_lr,
-                 criterion, max_crit_lr, min_cri_lr,
-                 warmup_epochs, num_batches, config):
+    def __init__(self, model, config, max_model_lr = 0, min_model_lr = 0,
+                 criterion = None, max_crit_lr = 0, min_cri_lr = 0,
+                 warmup_epochs = 0, num_batches = 0):
         super(LightningWrapper, self).__init__()
 
         self.model = model

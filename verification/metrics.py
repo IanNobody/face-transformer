@@ -40,6 +40,9 @@ class Metrics:
                 if self.config.model_name == "dat":
                     embedding1 = self.model(img1)[0].cpu()
                     embedding2 = self.model(img2)[0].cpu()
+                elif self.config.model_name == "multitask_openclip":
+                    embedding1 = self.model(img1)["embedding"].cpu()
+                    embedding2 = self.model(img2)["embedding"].cpu()
                 else:
                     embedding1 = self.model(img1).cpu()
                     embedding2 = self.model(img2).cpu()
