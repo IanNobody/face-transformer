@@ -95,10 +95,10 @@ def transforms():
 
 def augumentations():
     return alb.Compose([
-        A.RandomFog(p=0.3),
-        A.Equalize(mode="cv", by_channels=True, p=0.3),
-        A.RandomBrightnessContrast(p=0.3),
-        A.Sharpen(p=0.3),
+        # A.RandomFog(p=0.3),
+        # A.Equalize(mode="cv", by_channels=True, p=0.3),
+        # A.RandomBrightnessContrast(p=0.3),
+        # A.Sharpen(p=0.3),
         A.Normalize()
     ])
 
