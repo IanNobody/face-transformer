@@ -47,7 +47,7 @@ def start_training(model, dataloader, val_dataloader, config, classes):
         dirpath=config.export_weights_dir,
         filename='checkpoint-{epoch:02d}-{val_loss:.2f}',
         monitor='acc',
-        save_top_k=10,
+        save_top_k=50,
         mode='max'
     )
     trainer = Trainer(max_epochs=config.num_of_epoch,
