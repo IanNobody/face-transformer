@@ -97,6 +97,16 @@ class Metrics:
             #     print("Error occurred while processing files. \nError description: ", e)
             #     exit(-1)
 
+    def test_and_print(self, output_dir):
+        self._run_stats()
+        fpr, tpr, thresholds, roc_auc = self._generate_roc()
+        best_threshold = self._get_best_threshold(fpr, tpr, thresholds, 0.0001)
+        filepath = os.path.join(output_dir, "roc.png")
+        self._save_roc(fpr, tpr, roc_auc, filepath)
+        stats = self._threshold_based_statistics(best_threshold)
+        self._append_stats(stats, best_threshold, roc_auc)
+        self._print_stats()
+
     def _append_stats(self, stats, threshold, roc_auc):
         self.stats["threshold"].append(threshold)
         self.stats["roc_auc"].append(roc_auc)
