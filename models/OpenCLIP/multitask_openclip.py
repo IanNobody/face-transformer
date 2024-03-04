@@ -1,25 +1,12 @@
 import torch.nn as nn
-from transformers import CLIPProcessor, CLIPModel
 import open_clip
-import torch
 
 class MultitaskOpenCLIP(nn.Module):
     def __init__(self, device, num_classes):
         super(MultitaskOpenCLIP, self).__init__()
 
         self.device = device
-        # self.model = CLIPModel.from_pretrained("openai/clip-vit-base-patch32").vision_model
-        # self.processor = CLIPProcessor.from_pretrained("hf-hub:laion/CLIP-ViT-B-32-DataComp.M-s128M-b4K")
-
         self.model, _, _ = open_clip.create_model_and_transforms('hf-hub:laion/CLIP-ViT-B-32-DataComp.M-s128M-b4K')
-
-        self.model.transformer.requires_grad_(False)
-        self.model.positional_embedding.requires_grad_(False)
-        self.model.text_projection.requires_grad_(False)
-        self.model.logit_scale.requires_grad_(False)
-        self.model.token_embedding.weight.requires_grad_(False)
-        self.model.ln_final.weight.requires_grad_(False)
-        self.model.ln_final.bias.requires_grad_(False)
 
         self.embed_fc = nn.Linear(512, 512)
         self.class_fc = nn.Linear(512, num_classes)

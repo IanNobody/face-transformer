@@ -51,7 +51,7 @@ def start_training(model, dataloader, val_dataloader, config, classes):
     )
     trainer = Trainer(max_epochs=config.num_of_epoch,
                       callbacks=[checkpointer],
-                      # strategy='ddp_find_unused_parameters_true'
+                      strategy='ddp_find_unused_parameters_true',
                       accelerator="auto", devices=config.device)
     trainer.fit(lightning_model, dataloader, val_dataloader)
     print("Training successfully finished.")
