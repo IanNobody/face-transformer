@@ -27,6 +27,8 @@ from data.lfw_data import LFWDataset
 from train_utils.resumable_sampler import ResumableRandomSampler
 from train_utils.train_config import TrainingConfiguration
 from verification.metrics import Metrics
+import matplotlib.pyplot as plt
+from pytorch_lightning.loggers import TensorBoardLogger
 
 torch.set_float32_matmul_precision('medium')
 
@@ -40,17 +42,18 @@ embedding_size = 512
 
 def start_training(model, dataloader, val_dataloader, config, classes):
     criterion = losses.ArcFaceLoss(num_of_classes, embedding_size)
-
     lightning_model = LightningWrapper(model, config, max_model_lr, min_model_lr, criterion, max_crit_lr, min_crit_lr,
-                                       warmup_epochs, len(dataloader))
+                                       warmup_epochs, len(dataloader) / len(config.device))
     checkpointer = ModelCheckpoint(
         dirpath=config.export_weights_dir,
-        filename='checkpoint-{epoch:02d}-{val_loss:.2f}',
+        filename='checkpoint-{epoch:02d}-{loss:.2f}-{acc:.2f}',
         monitor='acc',
-        save_top_k=50,
+        save_top_k=10,
         mode='max'
     )
+    logger = TensorBoardLogger(save_dir="logs/", name="cmt_refactored")
     trainer = Trainer(max_epochs=config.num_of_epoch,
+                      logger=logger,
                       callbacks=[checkpointer],
                       strategy='ddp_find_unused_parameters_true',
                       accelerator="auto", devices=config.device)
@@ -147,7 +150,7 @@ def create_model(args, configuration, embedding_size, num_of_classes):
     elif args.smt:
         configuration.model_name = "smt"
         model = SMT(num_classes=num_of_classes)
-        model.head = nn.Linear(model.head.in_features, embedding_size)
+        model.embed_fc = nn.Linear(model.embed_fc.in_features, embedding_size)
     elif args.biformer:
         configuration.model_name = "biformer"
         model = biformer_base()
@@ -155,7 +158,7 @@ def create_model(args, configuration, embedding_size, num_of_classes):
     elif args.cmt:
         configuration.model_name = "cmt"
         model = cmt_b(num_classes=num_of_classes)
-        model.head = nn.Linear(model.head.in_features, embedding_size)
+        model.embed_fc = nn.Linear(model.head.in_features, embedding_size)
     elif args.noisy_vit:
         configuration.model_name = "noisy_vit"
         model = vit_b()
@@ -228,7 +231,7 @@ if __name__ == '__main__':
         dataloader = DataLoader(dataset, batch_size=configuration.batch_size, sampler=data_sampler, num_workers=5)
         val_data = LFWDataset(transform=transforms())
         val_dataloader = DataLoader(val_data, batch_size=configuration.batch_size,
-                                    num_workers=8, collate_fn=LFWDataset.collate_fn)
+                                    num_workers=8, collate_fn=LFWDataset.collate_fn, shuffle=True)
         print_config_sumup(configuration, dataset, model, num_of_classes)
         start_training(model, dataloader, val_dataloader, configuration, num_of_classes)
     else:

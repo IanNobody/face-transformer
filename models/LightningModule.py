@@ -1,16 +1,12 @@
 import pytorch_lightning as L
 import torch
-from sklearn.metrics import roc_curve, f1_score
-import numpy as np
 from torch.optim import lr_scheduler, AdamW, SGD
 import pytorch_warmup as warmup
-import copy
-from PIL import Image
-import torchvision.transforms.functional as TF
 import random
+from torchmetrics import ROC, F1Score
 
 def _similarity(x, y):
-    return np.dot(x, y) / (np.linalg.norm(x) * np.linalg.norm(y))
+    return torch.dot(x, y) / (torch.linalg.norm(x) * torch.linalg.norm(y))
 
 class LightningWrapper(L.LightningModule):
     def __init__(self, model, config, max_model_lr = 0, min_model_lr = 0,
@@ -53,6 +49,10 @@ class LightningWrapper(L.LightningModule):
         #                      "gender_fc": 0.1, "hair_fc": 0.1, "glasses_fc": 0.1, "mustache_fc": 0.1,
         #                      "hat_fc": 0.1, "open_mouth_fc": 0.1, "long_hair_fc": 0.1}
         self.task_rng = random.Random(412)
+
+        self.f1_score = F1Score(task="binary")
+        self.roc = ROC(task="binary")
+
     def _configure_custom_criterions(self):
         self.classification_criterion = torch.nn.CrossEntropyLoss()
         self.hair_color_criterion = torch.nn.CrossEntropyLoss()
@@ -97,6 +97,7 @@ class LightningWrapper(L.LightningModule):
 
         out = self(x, txt)
         loss = self._custom_loss_call(out, gt)
+
         self.manual_backward(loss)
 
         # before_model = copy.deepcopy(self.model.model.state_dict())
@@ -125,6 +126,9 @@ class LightningWrapper(L.LightningModule):
             if self.criterion_warmup.last_step + 1 >= (self.num_batches * self.warmup_epochs):
                 crit_sched.step()
 
+        if batch_idx == self.num_batches - 1:
+            self.losses.append(loss.item())
+
         self.log("loss", loss, prog_bar=True)
         self.log("lr", model_opt.param_groups[0]['lr'], prog_bar=True)
 
@@ -133,6 +137,7 @@ class LightningWrapper(L.LightningModule):
     def check_weights_changed(self, before, after, tgt):
         same = 0
         different = 0
+        total_change = 0
 
         for name_b, param_b in before:
             for name_a, param_a in after:
@@ -142,8 +147,10 @@ class LightningWrapper(L.LightningModule):
                         same += 1
                     else:
                         different += 1
+                        total_change += torch.sum(torch.abs(param_b - param_a)).item()
 
-        print(different, " changed and ", same , " stayed the same in ", tgt, ".")
+        avg_change = total_change / different if different > 0 else 0
+        print(different, " had average change ", avg_change, " and ", same, " stayed the same in ", tgt, ".")
 
     def _custom_loss_call(self, out, gt):
         if self.current_objective == "gender_fc":
@@ -186,33 +193,35 @@ class LightningWrapper(L.LightningModule):
     def validation_step(self, batch, _):
         img1 = batch["img1"]
         img2 = batch["img2"]
-        label = batch["label"].cpu()
+        label = batch["label"].int()
 
-        embedding1 = self(img1)["embedding"].cpu()
-        embedding2 = self(img2)["embedding"].cpu()
+        embedding1 = self(img1)["embedding"]
+        embedding2 = self(img2)["embedding"]
 
-        similarity = [_similarity(em1, em2) for em1, em2 in zip(embedding1, embedding2)]
+        similarity = torch.stack([_similarity(em1, em2) for em1, em2 in zip(embedding1, embedding2)])
 
         self.val_sims.extend(similarity)
         self.val_gts.extend(label)
 
     def on_validation_epoch_end(self):
-        all_outputs = self.val_sims
-        all_targets = self.val_gts
+        all_outputs = torch.tensor(self.val_sims)
+        all_targets = torch.tensor(self.val_gts).int()
 
-        fpr, tpr, thresholds = roc_curve(all_targets, all_outputs)
+        fpr, tpr, thresholds = self.roc(all_outputs, all_targets)
 
-        if all(np.isnan(x) for x in fpr) or all(np.isnan(x) for x in tpr):
+        if all(torch.isnan(x) for x in fpr) or all(torch.isnan(x) for x in tpr):
             threshold = thresholds[0]
         else:
-            threshold = thresholds[np.nanargmin(np.abs(fpr - (1 - tpr)))]
+            threshold = thresholds[torch.argmin(torch.abs(fpr - (1 - tpr)))]
 
-        all_outputs = [1 if x > threshold else 0 for x in all_outputs]
+        all_outputs = torch.tensor([1. if x > threshold else 0. for x in all_outputs])
 
         self.val_sims = []
         self.val_gts = []
 
-        self.log('acc', f1_score(all_targets, all_outputs), prog_bar=True, sync_dist=True)
+        f1 = self.f1_score(all_outputs, all_targets)
+        print("F1: ", f1, " from device ", self.device)
+        self.log('acc', f1, prog_bar=True, sync_dist=True)
 
     def configure_optimizers(self):
         total_batches = self.config.num_of_epoch * self.num_batches
