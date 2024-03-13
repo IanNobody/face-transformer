@@ -128,6 +128,8 @@ class LightningWrapper(L.LightningModule):
         self.log("loss", loss, prog_bar=True)
         self.log("lr", model_opt.param_groups[0]['lr'], prog_bar=True)
 
+        return loss
+
     def check_weights_changed(self, before, after, tgt):
         same = 0
         different = 0
