@@ -273,6 +273,11 @@ class CMT(nn.Module):
         self._avg_pooling = nn.AdaptiveAvgPool2d(1)
         self._drop = nn.Dropout(dp)
         self.head = nn.Linear(fc_dim, num_classes) if num_classes > 0 else nn.Identity()
+
+        self.embed_fc = nn.Linear(fc_dim, num_classes) if num_classes > 0 else nn.Identity()
+        self.class_fc = nn.Linear(fc_dim, num_classes) if num_classes > 0 else nn.Identity()
+        self.gender_fc = nn.Linear(fc_dim, 1)
+
         self.apply(self._init_weights)
 
     def _init_weights(self, m):
@@ -351,8 +356,11 @@ class CMT(nn.Module):
 
     def forward(self, x):
         x = self.forward_features(x)
-        x = self.head(x)
-        return x
+        embed = self.embed_fc(x)
+        cls = self.class_fc(x)
+        gender = self.gender_fc(x)
+
+        return {'embedding': embed, 'class': cls, 'gender': gender}
 
 
 def resize_pos_embed(posemb, posemb_new):

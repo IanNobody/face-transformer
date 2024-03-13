@@ -301,7 +301,9 @@ class SMT(nn.Module):
             setattr(self, f"norm{i + 1}", norm)
 
         # classification head
-        self.head = nn.Linear(embed_dims[3], num_classes) if num_classes > 0 else nn.Identity()
+        self.embed_fc = nn.Linear(embed_dims[3], num_classes) if num_classes > 0 else nn.Identity()
+        self.class_fc = nn.Linear(embed_dims[3], num_classes) if num_classes > 0 else nn.Identity()
+        self.gender_fc = nn.Linear(embed_dims[3], 1)
 
         self.apply(self._init_weights)
 
@@ -352,9 +354,11 @@ class SMT(nn.Module):
 
     def forward(self, x):
         x = self.forward_features(x)
-        x = self.head(x)
+        embed = self.embed_fc(x)
+        cls = self.class_fc(x)
+        gender = self.gender_fc(x)
 
-        return x
+        return {'embedding': embed, 'class': cls, 'gender': gender}
 
 
 class DWConv(nn.Module):
