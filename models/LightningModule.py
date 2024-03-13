@@ -40,6 +40,19 @@ class LightningWrapper(L.LightningModule):
         self.automatic_optimization = False
         self.current_objective = "embed_fc"
 
+        self.task_codes = {"embed_fc": 0, "class_fc": 1,
+                           "gender_fc": 10, "hair_fc": 11, "glasses_fc": 12, "mustache_fc": 13, "hat_fc": 14,
+                           "open_mouth_fc": 15, "long_hair_fc": 16}
+        # self.task_weights = {"embed_fc": 0.5, "class_fc": 0.25,
+        #                      "gender_fc": 0.1, "hair_fc": 0.025, "glasses_fc": 0.025, "mustache_fc": 0.025,
+        #                      "hat_fc": 0.025, "open_mouth_fc": 0.025, "long_hair_fc": 0.025}
+        self.task_weights = {"embed_fc": 0.7, "class_fc": 0.3,
+                             "gender_fc": 0., "hair_fc": 0., "glasses_fc": 0., "mustache_fc": 0.,
+                             "hat_fc": 0.0, "open_mouth_fc": 0., "long_hair_fc": 0.}
+        # self.task_weights = {"embed_fc": 0.2, "class_fc": 0.1,
+        #                      "gender_fc": 0.1, "hair_fc": 0.1, "glasses_fc": 0.1, "mustache_fc": 0.1,
+        #                      "hat_fc": 0.1, "open_mouth_fc": 0.1, "long_hair_fc": 0.1}
+        self.task_rng = random.Random(412)
     def _configure_custom_criterions(self):
         self.classification_criterion = torch.nn.CrossEntropyLoss()
         self.hair_color_criterion = torch.nn.CrossEntropyLoss()
@@ -58,58 +71,23 @@ class LightningWrapper(L.LightningModule):
         else:
             return self.model(x)
 
-    def on_train_epoch_start(self):
-        model_opt, crit_opt = self.optimizers()
-        model_opt.zero_grad()
-        crit_opt.zero_grad()
-        if self.trainer.current_epoch < self.warmup_epochs:
-            self.unfreeze_layer(["embed_fc"])
-            self.current_objective = "recognition"
-            self.log("obj", 0, prog_bar=True)
-        elif (self.trainer.current_epoch - self.warmup_epochs) % 20 < 16:
-            epoch = (self.trainer.current_epoch - self.warmup_epochs) % 20 % 16
-            if epoch % 16 == 0:
-                self.unfreeze_layer(["gender_fc"])
-                self.current_objective = "gender"
-                self.log("obj", 1, prog_bar=True)
-            elif epoch % 16 in [1, 3, 5, 7, 9, 11, 13, 15]:
-                self.unfreeze_layer(["embed_fc"])
-                self.current_objective = "recognition"
-                self.log("obj", 2, prog_bar=True)
-            elif epoch % 16 == 2:
-                self.unfreeze_layer(["hair_fc"])
-                self.current_objective = "hair_color"
-                self.log("obj", 3, prog_bar=True)
-            elif epoch % 16 == 4:
-                self.unfreeze_layer(["glasses_fc"])
-                self.current_objective = "glasses"
-                self.log("obj", 4, prog_bar=True)
-            elif epoch % 16 == 6:
-                self.unfreeze_layer(["mustache_fc"])
-                self.current_objective = "mustache"
-                self.log("obj", 5, prog_bar=True)
-            elif epoch % 16 == 8:
-                self.unfreeze_layer(["hat_fc"])
-                self.current_objective = "hat"
-                self.log("obj", 6, prog_bar=True)
-            elif epoch % 16 == 10:
-                self.unfreeze_layer(["open_mouth_fc"])
-                self.current_objective = "open_mouth"
-                self.log("obj", 7, prog_bar=True)
-            elif epoch % 16 == 12:
-                self.unfreeze_layer(["long_hair_fc"])
-                self.current_objective = "long_hair"
-                self.log("obj", 8, prog_bar=True)
-            elif epoch % 16 == 14:
-                self.unfreeze_layer(["class_fc"])
-                self.current_objective = "classification"
-                self.log("obj", 9, prog_bar=True)
-        else:
-            self.unfreeze_layer(["embed_fc"])
-            self.current_objective = "recognition"
-            self.log("obj", 0, prog_bar=True)
+    def switch_task_by_layer_name(self, layer_name):
+        self.current_objective = layer_name
+        self.unfreeze_layer([layer_name])
+        self.log("obj", self.task_codes[layer_name], prog_bar=True)
+
+    def switch_random_task(self):
+        rand = self.task_rng.random()
+        for task in self.task_weights:
+            if rand > self.task_weights[task]:
+                rand -= self.task_weights[task]
+            else:
+                self.switch_task_by_layer_name(task)
+                break
 
     def training_step(self, batch, batch_idx):
+        self.switch_random_task()
+
         model_opt, crit_opt = self.optimizers()
         model_sched, crit_sched = self.lr_schedulers()
 
@@ -166,21 +144,21 @@ class LightningWrapper(L.LightningModule):
         print(different, " changed and ", same , " stayed the same in ", tgt, ".")
 
     def _custom_loss_call(self, out, gt):
-        if self.current_objective == "gender":
+        if self.current_objective == "gender_fc":
             loss = self.gender_criterion(out["gender"], gt["gender"])
-        elif self.current_objective == "hair_color":
+        elif self.current_objective == "hair_fc":
             loss = self.hair_color_criterion(out["hair"], gt["hair"])
-        elif self.current_objective == "glasses":
+        elif self.current_objective == "glasses_fc":
             loss = self.glasses_criterion(out["glasses"], gt["glasses"])
-        elif self.current_objective == "mustache":
+        elif self.current_objective == "mustache_fc":
             loss = self.mustache_criterion(out["mustache"], gt["mustache"])
-        elif self.current_objective == "hat":
+        elif self.current_objective == "hat_fc":
             loss = self.hat_criterion(out["hat"], gt["hat"])
-        elif self.current_objective == "open_mouth":
+        elif self.current_objective == "open_mouth_fc":
             loss = self.open_mouth_criterion(out["open_mouth"], gt["open_mouth"])
-        elif self.current_objective == "long_hair":
+        elif self.current_objective == "long_hair_fc":
             loss = self.long_hair_criterion(out["long_hair"], gt["long_hair"])
-        elif self.current_objective == "classification":
+        elif self.current_objective == "class_fc":
             loss = self.classification_criterion(out["class"], gt["class"])
         else:
             loss = self.criterion(out["embedding"], gt["class"])
@@ -244,6 +222,9 @@ class LightningWrapper(L.LightningModule):
         criterion_scheduler = lr_scheduler.CosineAnnealingLR(criterion_optimizer,
                                                              total_batches // 5,
                                                              self.min_crit_lr)
+
+        criterion_optimizer.zero_grad()
+        model_optimizer.zero_grad()
 
         warmup_period = int(self.warmup_epochs * self.num_batches)
         self.model_warmup = warmup.LinearWarmup(model_optimizer, warmup_period=warmup_period)
