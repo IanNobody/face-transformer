@@ -4,12 +4,17 @@ import cv2
 from os.path import join
 from os.path import isfile
 import open_clip
+from PIL import Image
+import torch
+import numpy as np
 
 class VGGFaceDataset(Dataset):
     def __init__(self, img_dir, meta_dir, transform=None, augmentation=None, device=None):
         self.img_root = img_dir
 
         self.tokenizer = open_clip.get_tokenizer('hf-hub:laion/CLIP-ViT-B-32-DataComp.M-s128M-b4K')
+        _, transform, _ = open_clip.create_model_and_transforms('hf-hub:laion/CLIP-ViT-B-32-DataComp.M-s128M-b4K')
+        self.transform = transform
 
         with open(join(meta_dir, "train_list_aligned.txt")) as f:
             self.img = [line for line in f.read().splitlines() if isfile(join(img_dir, line))]
@@ -30,7 +35,7 @@ class VGGFaceDataset(Dataset):
         self.open_mouth = self._load_binary_meta_to_class(["11-Mouth_Open.txt"], meta_dir)
         self.long_hair = self._load_binary_meta_to_class(["06-Long_Hair.txt"], meta_dir)
 
-        self.transform = transform
+        # self.transform = transform
         self.augmentation = augmentation
         self.device = device
 
@@ -62,7 +67,8 @@ class VGGFaceDataset(Dataset):
 
         img_id = self.img[idx]
         img_path = join(self.img_root, img_id)
-        image = cv2.imread(img_path) / 255.0
+        # image = cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2RGB)
+        image = Image.open(img_path)
 
         cls_name = self.cls[idx]
         ann = torch.tensor(self.cls_dict[cls_name])
@@ -75,8 +81,8 @@ class VGGFaceDataset(Dataset):
         open_mouth = torch.tensor(self.open_mouth[img_id])
         long_hair = torch.tensor(self.long_hair[img_id])
 
-        if self.augmentation:
-            image = self.augmentation(image=image)["image"]
+        # if self.augmentation:
+        #     image = self.augmentation(image=image)["image"]
 
         if self.transform:
             image = self.transform(image)
