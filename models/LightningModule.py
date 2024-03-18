@@ -126,11 +126,9 @@ class LightningWrapper(L.LightningModule):
             if self.criterion_warmup.last_step + 1 >= (self.num_batches * self.warmup_epochs):
                 crit_sched.step()
 
-        if batch_idx == self.num_batches - 1:
-            self.losses.append(loss.item())
-
         self.log("loss", loss, prog_bar=True)
-        self.log("lr", model_opt.param_groups[0]['lr'], prog_bar=True)
+        self.log("lrm", model_opt.param_groups[0]['lr'], prog_bar=True)
+        self.log("lrc", crit_opt.param_groups[0]['lr'], prog_bar=True)
 
         return loss
 
@@ -221,7 +219,10 @@ class LightningWrapper(L.LightningModule):
 
         f1 = self.f1_score(all_outputs, all_targets)
         print("F1: ", f1, " from device ", self.device)
+        print("TAR(%)@FAR=1e-3: ", tpr[indexes][best_index], "from device ", self.device)
         self.log('acc', f1, prog_bar=True, sync_dist=True)
+        self.log('th', threshold.to(self.device), prog_bar=True, sync_dist=True)
+        self.log('tar@far', tpr[indexes][best_index].to(self.device), prog_bar=True, sync_dist=True)
 
     def configure_optimizers(self):
         total_batches = self.config.num_of_epoch * self.num_batches
