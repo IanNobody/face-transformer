@@ -67,8 +67,7 @@ class VGGFaceDataset(Dataset):
 
         img_id = self.img[idx]
         img_path = join(self.img_root, img_id)
-        # image = cv2.cvtColor(cv2.imread(img_path), cv2.COLOR_BGR2RGB)
-        image = Image.open(img_path)
+        image = np.array(Image.open(img_path))
 
         cls_name = self.cls[idx]
         ann = torch.tensor(self.cls_dict[cls_name])
@@ -81,8 +80,10 @@ class VGGFaceDataset(Dataset):
         open_mouth = torch.tensor(self.open_mouth[img_id])
         long_hair = torch.tensor(self.long_hair[img_id])
 
-        # if self.augmentation:
-        #     image = self.augmentation(image=image)["image"]
+        if self.augmentation:
+            image = self.augmentation(image=image)["image"]
+
+        image = Image.fromarray(image)
 
         if self.transform:
             image = self.transform(image)
