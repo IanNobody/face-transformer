@@ -4,13 +4,15 @@ from torch.optim import lr_scheduler, AdamW, SGD
 import pytorch_warmup as warmup
 import random
 from torchmetrics import ROC, F1Score
+from models.OpenCLIP.checkpointed_openclip_wrapper import PretrainedOpenCLIPWrapper
+from pytorch_metric_learning import losses
 
 def _similarity(x, y):
     return torch.dot(x, y) / (torch.linalg.norm(x) * torch.linalg.norm(y))
 
 class LightningWrapper(L.LightningModule):
     def __init__(self, model, config, max_model_lr = 0, min_model_lr = 0,
-                 criterion = None, max_crit_lr = 0, min_cri_lr = 0,
+                 criterion = None, max_crit_lr = 0, min_crit_lr = 0,
                  warmup_epochs = 0, num_batches = 0):
         super(LightningWrapper, self).__init__()
 
@@ -22,7 +24,7 @@ class LightningWrapper(L.LightningModule):
         self._configure_custom_criterions()
         self.criterion = criterion
         self.max_crit_lr = max_crit_lr
-        self.min_crit_lr = min_cri_lr
+        self.min_crit_lr = min_crit_lr
         self.criterion_warmup = None
 
         self.warmup_epochs = warmup_epochs
@@ -42,13 +44,18 @@ class LightningWrapper(L.LightningModule):
         # self.task_weights = {"embed_fc": 0.5, "class_fc": 0.25,
         #                      "gender_fc": 0.1, "hair_fc": 0.025, "glasses_fc": 0.025, "mustache_fc": 0.025,
         #                      "hat_fc": 0.025, "open_mouth_fc": 0.025, "long_hair_fc": 0.025}
-        self.task_weights = {"embed_fc": 0.7, "class_fc": 0.3,
-                             "gender_fc": 0., "hair_fc": 0., "glasses_fc": 0., "mustache_fc": 0.,
-                             "hat_fc": 0.0, "open_mouth_fc": 0., "long_hair_fc": 0.}
+        # self.task_weights = {"embed_fc": 0.7, "class_fc": 0.3,
+        #                      "gender_fc": 0., "hair_fc": 0., "glasses_fc": 0., "mustache_fc": 0.,
+        #                      "hat_fc": 0.0, "open_mouth_fc": 0., "long_hair_fc": 0.}
         # self.task_weights = {"embed_fc": 0.2, "class_fc": 0.1,
         #                      "gender_fc": 0.1, "hair_fc": 0.1, "glasses_fc": 0.1, "mustache_fc": 0.1,
         #                      "hat_fc": 0.1, "open_mouth_fc": 0.1, "long_hair_fc": 0.1}
+        self.task_weights = {"embed_fc": 0.8, "class_fc": 0.2,
+                             "gender_fc": 0., "hair_fc": 0., "glasses_fc": 0., "mustache_fc": 0.,
+                             "hat_fc": 0., "open_mouth_fc": 0., "long_hair_fc": 0.}
         self.task_rng = random.Random(412)
+
+        self.remaining = num_batches * 4
 
         self.f1_score = F1Score(task="binary")
         self.roc = ROC(task="binary")
@@ -118,9 +125,13 @@ class LightningWrapper(L.LightningModule):
         # if self.current_objective == "embed_fc":
         #     self.check_weights_changed(before_fc.items(), after_fc.items(), "EMBEDDING LAYER")
 
-        with self.model_warmup.dampening():
-            if self.model_warmup.last_step + 1 >= (self.num_batches * self.warmup_epochs):
-                model_sched.step()
+        if self.remaining <= 0:
+            with self.model_warmup.dampening():
+                if self.model_warmup.last_step + 1 >= (self.num_batches * self.warmup_epochs):
+                    model_sched.step()
+        else:
+            self.remaining -= 1
+            model_opt.param_groups[0]['lr'] = 0
 
         with self.criterion_warmup.dampening():
             if self.criterion_warmup.last_step + 1 >= (self.num_batches * self.warmup_epochs):
@@ -188,6 +199,11 @@ class LightningWrapper(L.LightningModule):
             else:
                 layers[name].weight.requires_grad_(False)
 
+    def wrap_model(self):
+        print(">>>>>>>>>>>>>> CALLED WRAPPER")
+        self.model = PretrainedOpenCLIPWrapper(self.model, 10177)
+        self.criterion = losses.ArcFaceLoss(10177, 512)
+
     def validation_step(self, batch, _):
         img1 = batch["img1"]
         img2 = batch["img2"]
@@ -206,6 +222,9 @@ class LightningWrapper(L.LightningModule):
         all_targets = torch.tensor(self.val_gts).int()
 
         fpr, tpr, thresholds = self.roc(all_outputs, all_targets)
+
+        indexes = torch.tensor([True if rate <= 1e-3 else False for rate in fpr])
+        best_index = torch.argmax(tpr[indexes])
 
         if all(torch.isnan(x) for x in fpr) or all(torch.isnan(x) for x in tpr):
             threshold = thresholds[0]
@@ -241,6 +260,9 @@ class LightningWrapper(L.LightningModule):
         warmup_period = int(self.warmup_epochs * self.num_batches)
         self.model_warmup = warmup.LinearWarmup(model_optimizer, warmup_period=warmup_period)
         self.criterion_warmup = warmup.LinearWarmup(criterion_optimizer, warmup_period=warmup_period)
+
+        for _ in range(int(15 * self.num_batches)):
+            criterion_scheduler.step()
 
         return [model_optimizer, criterion_optimizer], [
             {

@@ -9,10 +9,10 @@ class MultitaskOpenCLIP(nn.Module):
         self.model, _, _ = open_clip.create_model_and_transforms('hf-hub:laion/CLIP-ViT-B-32-DataComp.M-s128M-b4K')
 
         self.embed_fc = nn.Linear(512, 512)
-        self.class_fc = nn.Linear(512, num_classes + 1)
+        self.class_fc = nn.Linear(512, num_classes)
         self.gender_fc = nn.Linear(512, 1)
-        self.hair_fc = nn.Linear(512, 5)
-        self.glasses_fc = nn.Linear(512, 3)
+        self.hair_fc = nn.Linear(512, 4)
+        self.glasses_fc = nn.Linear(512, 2)
         self.mustache_fc = nn.Linear(512, 1)
         self.hat_fc = nn.Linear(512, 1)
         self.open_mouth_fc = nn.Linear(512, 1)

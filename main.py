@@ -12,13 +12,13 @@ from models.OpenCLIP.multitask_openclip import MultitaskOpenCLIP
 from models.LightningModule import LightningWrapper
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
+from models.OpenCLIP.checkpointed_openclip_wrapper import PretrainedOpenCLIPWrapper
 import torchvision.models as models
 
 from torch.utils.data import DataLoader, ConcatDataset
 from pytorch_metric_learning import losses
 import torch.nn as nn
 import torchvision.transforms as T
-import albumentations.augmentations.transforms as A
 import albumentations as alb
 
 from data.celeba_data import CelebADataset
@@ -33,17 +33,36 @@ from pytorch_lightning.loggers import TensorBoardLogger
 torch.set_float32_matmul_precision('medium')
 
 warmup_epochs = 1
-max_model_lr = 1e-5
-min_model_lr = 5e-7
-max_crit_lr = 4e-5
-min_crit_lr = 1e-6
+max_model_lr = 5e-7
+min_model_lr = 1e-8
+max_crit_lr = 5e-7
+min_crit_lr = 1e-8
 embedding_size = 512
 
 
 def start_training(model, dataloader, val_dataloader, config, classes):
-    criterion = losses.ArcFaceLoss(num_of_classes, embedding_size)
-    lightning_model = LightningWrapper(model, config, max_model_lr, min_model_lr, criterion, max_crit_lr, min_crit_lr,
-                                       warmup_epochs, len(dataloader) / len(config.device))
+    criterion = losses.ArcFaceLoss(8631, embedding_size)
+    if config.checkpoint_path:
+        # model = PretrainedOpenCLIPWrapper(model, 10177)
+        # criterion = losses.ArcFaceLoss(10177, 512)
+        lightning_model = LightningWrapper.load_from_checkpoint(
+            config.checkpoint_path,
+            map_location="cpu",
+            model=model, config=config,
+            max_model_lr=max_model_lr, min_model_lr=min_model_lr,
+            criterion=criterion,
+            max_crit_lr=max_crit_lr, min_crit_lr=min_crit_lr,
+            warmup_epochs=warmup_epochs, num_batches=len(dataloader) / len(config.device)
+        )
+        # lightning_model.wrap_model()
+    else:
+        lightning_model = LightningWrapper(
+            model=model, config=config,
+            max_model_lr=max_model_lr, min_model_lr=min_model_lr,
+            criterion=criterion,
+            max_crit_lr=max_crit_lr, min_crit_lr=min_crit_lr,
+            warmup_epochs=warmup_epochs, num_batches=len(dataloader) / len(config.device)
+        )
     checkpointer = ModelCheckpoint(
         dirpath=config.export_weights_dir,
         filename='checkpoint-{epoch:02d}-{loss:.2f}-{acc:.2f}',
@@ -120,10 +139,9 @@ def dataset(args, transform, augmentation):
         ))
     elif args.celeba:
         datasets.append(CelebADataset(
-            args.annotation_path,
             args.dataset_path,
-            transform=transform,
-            augumentation=augmentation
+            args.files_list,
+            augmentation=augmentation
         ))
     elif args.lfw:
         datasets.append(LFWDataset(transform=transform))
@@ -170,7 +188,7 @@ def create_model(args, configuration, embedding_size, num_of_classes):
         model = OpenCLIPWrapper()
     elif args.multitask_openclip:
         configuration.model_name = "multitask_openclip"
-        model = MultitaskOpenCLIP(configuration.device, num_of_classes)
+        model = MultitaskOpenCLIP(configuration.device, 8631)
 
     return model
 
