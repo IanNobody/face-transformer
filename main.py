@@ -159,9 +159,10 @@ def create_model(args, configuration, embedding_size, num_of_classes):
         model = models.resnet50()
         model.fc = nn.Linear(model.fc.in_features, embedding_size)
     elif args.dat:
-        configuration.model_name = "dat"
-        model = DAT(num_classes=num_of_classes)
-        model.cls_head = nn.Linear(model.cls_head.in_features, embedding_size)
+        pass
+        # configuration.model_name = "dat"
+        # model = DAT(num_classes=num_of_classes)
+        # model.cls_head = nn.Linear(model.cls_head.in_features, embedding_size)
     elif args.flatten_transformer:
         configuration.model_name = "flatten_transformer"
         model = FLattenSwinTransformer(num_classes=num_of_classes)
