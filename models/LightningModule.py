@@ -25,7 +25,7 @@ class LightningWrapper(L.LightningModule):
         self.min_crit_lr = min_cri_lr
         self.criterion_warmup = None
 
-        self.warmup_epochs = warmup_epochs
+        self.warmup_steps = int(warmup_epochs * num_batches)
 
         self.config = config
         self.num_batches = num_batches
@@ -49,6 +49,8 @@ class LightningWrapper(L.LightningModule):
         #                      "gender_fc": 0.1, "hair_fc": 0.1, "glasses_fc": 0.1, "mustache_fc": 0.1,
         #                      "hat_fc": 0.1, "open_mouth_fc": 0.1, "long_hair_fc": 0.1}
         self.task_rng = random.Random(412)
+
+
 
         self.f1_score = F1Score(task="binary")
         self.roc = ROC(task="binary")
@@ -92,10 +94,11 @@ class LightningWrapper(L.LightningModule):
         model_sched, crit_sched = self.lr_schedulers()
 
         x = batch["image"]
-        txt = batch["textual_prompt"]
+        # txt = batch["textual_prompt"]
         gt = batch["annotation"]
 
-        out = self(x, txt)
+        # out = self(x, txt)
+        out = self(x)
         loss = self._custom_loss_call(out, gt)
 
         self.manual_backward(loss)
@@ -118,19 +121,29 @@ class LightningWrapper(L.LightningModule):
         # if self.current_objective == "embed_fc":
         #     self.check_weights_changed(before_fc.items(), after_fc.items(), "EMBEDDING LAYER")
 
-        with self.model_warmup.dampening():
-            if self.model_warmup.last_step + 1 >= (self.num_batches * self.warmup_epochs):
-                model_sched.step()
-
-        with self.criterion_warmup.dampening():
-            if self.criterion_warmup.last_step + 1 >= (self.num_batches * self.warmup_epochs):
-                crit_sched.step()
+        if self.num_batches * self.current_epoch + batch_idx < self.warmup_steps:
+            self.warmup_lr_step(batch_idx, self.current_epoch)
+        else:
+            model_sched.step()
+            crit_sched.step()
 
         self.log("loss", loss, prog_bar=True)
         self.log("lrm", model_opt.param_groups[0]['lr'], prog_bar=True)
         self.log("lrc", crit_opt.param_groups[0]['lr'], prog_bar=True)
 
         return loss
+
+    def warmup_lr_step(self, batch_idx, epoch):
+        currnet = self.num_batches * epoch + batch_idx
+        model_lr = (self.max_model_lr - 1e-10) * (currnet / self.warmup_steps) + 1e-10
+        crit_lr = (self.max_crit_lr - 1e-10) * (currnet / self.warmup_steps) + 1e-10
+        model_optim, criterion_optim = self.optimizers()
+        self.set_lr(model_optim, model_lr)
+        self.set_lr(criterion_optim, crit_lr)
+
+    def set_lr(self, target, lr):
+        for param_group in target.param_groups:
+            param_group['lr'] = lr
 
     def check_weights_changed(self, before, after, tgt):
         same = 0
@@ -174,7 +187,7 @@ class LightningWrapper(L.LightningModule):
 
     def unfreeze_layer(self, target):
         layers = {name: module for name, module in self.model.named_modules() if '.' not in name}
-        layers.pop('model')
+        layers.pop('clip_vision')
         layers.pop('')
 
         if "embed_fc" in target:
@@ -207,6 +220,9 @@ class LightningWrapper(L.LightningModule):
 
         fpr, tpr, thresholds = self.roc(all_outputs, all_targets)
 
+        indexes = torch.tensor([True if rate <= 1e-3 else False for rate in fpr])
+        best_index = torch.argmax(tpr[indexes])
+
         if all(torch.isnan(x) for x in fpr) or all(torch.isnan(x) for x in tpr):
             threshold = thresholds[0]
         else:
@@ -218,8 +234,9 @@ class LightningWrapper(L.LightningModule):
         self.val_gts = []
 
         f1 = self.f1_score(all_outputs, all_targets)
-        print("F1: ", f1, " from device ", self.device)
-        print("TAR(%)@FAR=1e-3: ", tpr[indexes][best_index], "from device ", self.device)
+        # print("F1: ", f1, " from device ", self.device)
+        # print("TAR(%)@FAR=1e-3: ", tpr[indexes][best_index], "from device ", self.device)
+        print(".", end="")
         self.log('acc', f1, prog_bar=True, sync_dist=True)
         self.log('th', threshold.to(self.device), prog_bar=True, sync_dist=True)
         self.log('tar@far', tpr[indexes][best_index].to(self.device), prog_bar=True, sync_dist=True)
@@ -238,9 +255,9 @@ class LightningWrapper(L.LightningModule):
         criterion_optimizer.zero_grad()
         model_optimizer.zero_grad()
 
-        warmup_period = int(self.warmup_epochs * self.num_batches)
-        self.model_warmup = warmup.LinearWarmup(model_optimizer, warmup_period=warmup_period)
-        self.criterion_warmup = warmup.LinearWarmup(criterion_optimizer, warmup_period=warmup_period)
+        # warmup_period = int(self.warmup_epochs * self.num_batches)
+        # self.model_warmup = warmup.LinearWarmup(model_optimizer, warmup_period=warmup_period)
+        # self.criterion_warmup = warmup.LinearWarmup(criterion_optimizer, warmup_period=warmup_period)
 
         return [model_optimizer, criterion_optimizer], [
             {
