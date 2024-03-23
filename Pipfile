@@ -14,6 +14,7 @@ tensorflow = "*"
 eer = "*"
 transformers = "*"
 lightning = "*"
+mxnet = "*"
 
 [dev-packages]
 
