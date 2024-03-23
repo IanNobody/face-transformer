@@ -237,12 +237,21 @@ if __name__ == '__main__':
         print_config_sumup(configuration, dataset, model, num_of_classes)
         start_training(model, dataloader, val_dataloader, configuration, num_of_classes)
     else:
-        print("Selected device - cuda:", str(args.gpu[0]))
-        configuration.device = torch.device("cuda:"+str(args.gpu[0]))
-        model = MultitaskOpenCLIP(None, 8631)
-        crit = losses.ArcFaceLoss(8631, embedding_size)
-        model = LightningWrapper.load_from_checkpoint(configuration.checkpoint_path, model=model, config=configuration, criterion=crit)
         dataloader = DataLoader(dataset, batch_size=configuration.batch_size, num_workers=16,
                                 shuffle=True, collate_fn=LFWDataset.collate_fn)
-        metrics = Metrics(model, dataloader, configuration)
-        metrics.test_and_print(args.output_dir)
+        search_pattern = os.path.join(configuration.checkpoint_path, '**', '*.ckpt')
+        for idx, ckpt_file in enumerate(sorted(glob.glob(search_pattern, recursive=True))):
+            configuration.device = torch.device("cuda:"+str(args.gpu[0]))
+            # model = MultitaskOpenCLIP(None, 8631)
+            model = OpenCLIPWrapper(100000)
+            # crit = losses.ArcFaceLoss(8631, embedding_size)
+            crit = losses.ArcFaceLoss(100000, 512)
+            model = LightningWrapper.load_from_checkpoint(ckpt_file, model=model, config=configuration, criterion=crit, map_location=configuration.device)
+            model.eval()
+            metrics = Metrics(model, dataloader, configuration)
+            print("Checking file: ", ckpt_file)
+            metrics.test_and_print(args.output_dir, idx)
+            del model
+            del metrics
+            gc.collect()
+            torch.cuda.empty_cache()
