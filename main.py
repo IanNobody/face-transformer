@@ -1,7 +1,10 @@
 import argparse
 import torch
 
-from models.DAT.dat import DAT
+import os
+import glob
+
+# from models.DAT.dat import DAT
 from models.Flatten_T.flatten_swin import FLattenSwinTransformer
 from models.SMT.smt import SMT
 from models.BiFormer.biformer import biformer_base
@@ -24,11 +27,15 @@ import albumentations as alb
 from data.celeba_data import CelebADataset
 from data.vggface_data import VGGFaceDataset
 from data.lfw_data import LFWDataset
+from data.ms1m_dataset import MS1M_Dataset
 from train_utils.resumable_sampler import ResumableRandomSampler
 from train_utils.train_config import TrainingConfiguration
 from verification.metrics import Metrics
 import matplotlib.pyplot as plt
 from pytorch_lightning.loggers import TensorBoardLogger
+import mxnet as mx
+from os.path import join
+import gc
 
 torch.set_float32_matmul_precision('medium')
 
@@ -42,16 +49,24 @@ embedding_size = 512
 
 def start_training(model, dataloader, val_dataloader, config, classes):
     criterion = losses.ArcFaceLoss(num_of_classes, embedding_size)
-    lightning_model = LightningWrapper(model, config, max_model_lr, min_model_lr, criterion, max_crit_lr, min_crit_lr,
+    if config.checkpoint_path is not None:
+        print("Loading checkpoint...")
+        lightning_model = LightningWrapper.load_from_checkpoint(config.checkpoint_path, model=model, map_location="cpu",
+                                                                config=config, max_model_lr=max_model_lr,
+                                                                min_model_lr=min_model_lr, criterion=criterion,
+                                                                max_crit_lr=max_crit_lr, min_crit_lr=min_crit_lr,
+                                                                warmup_epochs=warmup_epochs, num_batches=len(dataloader) / len(config.device))
+    else:
+        lightning_model = LightningWrapper(model, config, max_model_lr, min_model_lr, criterion, max_crit_lr, min_crit_lr,
                                        warmup_epochs, len(dataloader) / len(config.device))
     checkpointer = ModelCheckpoint(
         dirpath=config.export_weights_dir,
         filename='checkpoint-{epoch:02d}-{loss:.2f}-{acc:.2f}',
-        monitor='acc',
-        save_top_k=10,
+        monitor='tar@far',
+        save_top_k=100,
         mode='max'
     )
-    logger = TensorBoardLogger(save_dir="logs/", name="cmt_refactored")
+    logger = TensorBoardLogger(save_dir="logs/", name="openclip_ms1m")
     trainer = Trainer(max_epochs=config.num_of_epoch,
                       logger=logger,
                       callbacks=[checkpointer],
@@ -108,7 +123,7 @@ def augumentations():
     ])
 
 
-def dataset(args, transform, augmentation):
+def dataset(args, transform, augmentation, config):
     datasets = []
 
     if args.vggface:
@@ -127,6 +142,8 @@ def dataset(args, transform, augmentation):
         ))
     elif args.lfw:
         datasets.append(LFWDataset(transform=transform))
+    elif args.ms1m:
+        datasets.append(MS1M_Dataset(args.dataset_path, augmentation))
 
     return ConcatDataset(datasets), sum([d.num_of_classes() for d in datasets])
 
@@ -167,7 +184,7 @@ def create_model(args, configuration, embedding_size, num_of_classes):
         model.head = nn.Linear(model.head.in_features, embedding_size)
     elif args.openclip:
         configuration.model_name = "openclip"
-        model = OpenCLIPWrapper()
+        model = OpenCLIPWrapper(num_of_classes)
     elif args.multitask_openclip:
         configuration.model_name = "multitask_openclip"
         model = MultitaskOpenCLIP(configuration.device, num_of_classes)
@@ -198,6 +215,7 @@ if __name__ == '__main__':
     dataset_group.add_argument("--vggface", action="store_true", help="Use VGGFace2 dataset")
     dataset_group.add_argument("--cacd", action="store_true", help="Use cross-age CACD dataset")
     dataset_group.add_argument("--lfw", action="store_true", help="Use LFW benchmark dataset")
+    dataset_group.add_argument("--ms1m", action="store_true", help="Use MS1M dataset")
 
     parser.add_argument("--eval", action="store_true", help="Evaluate the model on the dataset")
     parser.add_argument("--dataset_path", type=str, help="Path to the dataset directory")
@@ -225,15 +243,15 @@ if __name__ == '__main__':
         num_of_epoch=args.num_of_epoch
     )
 
-    dataset, num_of_classes = dataset(args, transforms(), augumentations())
+    dataset, num_of_classes = dataset(args, transforms(), augumentations(), configuration)
     model = create_model(args, configuration, embedding_size, num_of_classes)
 
     if not args.eval:
         data_sampler = ResumableRandomSampler(dataset, configuration)
-        dataloader = DataLoader(dataset, batch_size=configuration.batch_size, sampler=data_sampler, num_workers=5)
+        dataloader = DataLoader(dataset, batch_size=configuration.batch_size, sampler=data_sampler, num_workers=6)
         val_data = LFWDataset(transform=transforms())
         val_dataloader = DataLoader(val_data, batch_size=configuration.batch_size,
-                                    num_workers=8, collate_fn=LFWDataset.collate_fn, shuffle=True)
+                                    num_workers=8, collate_fn=LFWDataset.collate_fn, shuffle=False)
         print_config_sumup(configuration, dataset, model, num_of_classes)
         start_training(model, dataloader, val_dataloader, configuration, num_of_classes)
     else:
@@ -255,3 +273,4 @@ if __name__ == '__main__':
             del metrics
             gc.collect()
             torch.cuda.empty_cache()
+
