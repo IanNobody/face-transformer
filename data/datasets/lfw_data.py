@@ -1,3 +1,6 @@
+import random
+
+import PIL.Image as Image
 from torch.utils.data import Dataset
 import numpy as np
 from sklearn.datasets import fetch_lfw_pairs
@@ -26,8 +29,12 @@ class LFWDataset(Dataset):
         return len(self.pairs)
 
     def __getitem__(self, idx):
-        img1 = self.pairs[idx][0]
-        img2 = self.pairs[idx][1]
+        idx = random.randint(0, len(self.pairs) - 1)
+        img1 = (self.pairs[idx][0] * 255).astype(np.uint8)
+        img2 = (self.pairs[idx][1] * 255).astype(np.uint8)
+
+        img1 = Image.fromarray(img1)
+        img2 = Image.fromarray(img2)
 
         if self.transform:
             img1 = self.transform(img1)

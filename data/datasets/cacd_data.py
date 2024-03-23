@@ -31,7 +31,7 @@ class CACDDataset(Dataset):
         if self.transform:
             image = self.transform(image)
 
-        sample = {'image': image, 'entity': ann}
+        sample = {'data': image, 'entity': ann}
         return sample
 
     def num_of_classes(self):

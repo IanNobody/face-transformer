@@ -84,7 +84,7 @@ class CelebADataset(Dataset):
                                           'hat': hat, 'open_mouth': open_mouth})
         text = self.tokenizer(text)[0]
 
-        sample = {'image': image, 'textual_prompt': text,
+        sample = {'data': {'image': image, 'textual_prompt': text},
                   "annotation": {'class': ann, 'gender': gender, 'hair': hair, 'glasses': glasses, 'mustache': mustache,
                                  'hat': hat, 'open_mouth': open_mouth, 'id': img_id}}
         return sample
@@ -140,5 +140,5 @@ class CelebADataset(Dataset):
         text_prompt += "."
         return text_prompt
 
-    def num_of_classes(self):
+    def num_classes(self):
         return len(self.class_dict)

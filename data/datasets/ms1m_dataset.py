@@ -26,7 +26,7 @@ class MS1M_Dataset(Dataset):
     def __len__(self):
         return 5822653
 
-    def num_of_classes(self):
+    def num_classes(self):
         return 100000
 
     def __getitem__(self, idx):
@@ -35,9 +35,9 @@ class MS1M_Dataset(Dataset):
                 if torch.is_tensor(idx):
                     idx = idx.tolist()
 
-                    record = self.recordio.read_idx(self.keys[idx])
-                    header, img = mx.recordio.unpack_img(record)
-                    break
+                record = self.recordio.read_idx(self.keys[idx])
+                header, img = mx.recordio.unpack_img(record)
+                break
             except:
                 print("ERROR: Failed to read record at index", idx)
                 idx = random.randint(0, len(self))
@@ -57,4 +57,4 @@ class MS1M_Dataset(Dataset):
         if self.transform:
             img = self.transform(img)
 
-        return {"image": img, "annotation": {"class": label}}
+        return {"data": img, "annotation": {"class": label}}

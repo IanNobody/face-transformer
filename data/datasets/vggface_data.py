@@ -92,7 +92,7 @@ class VGGFaceDataset(Dataset):
                                           'hat': hat, 'open_mouth': open_mouth, 'long_hair': long_hair})
         text = self.tokenizer(text)[0]
 
-        sample = {'image': image, 'textual_prompt': text, "annotation": {'class': ann, 'gender': gender, 'hair': hair, 'glasses': glasses, 'mustache': mustache,
+        sample = {'data': {'image': image, 'textual_prompt': text}, "annotation": {'class': ann, 'gender': gender, 'hair': hair, 'glasses': glasses, 'mustache': mustache,
                   'hat': hat, 'open_mouth': open_mouth, 'long_hair': long_hair, 'id': img_id }}
         return sample
 
@@ -154,5 +154,5 @@ class VGGFaceDataset(Dataset):
         text_prompt += "."
         return text_prompt
 
-    def num_of_classes(self):
+    def num_classes(self):
         return len(self.cls_dict)
