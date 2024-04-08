@@ -2,8 +2,8 @@ import pytorch_lightning as L
 import torch
 from torch.optim import lr_scheduler, AdamW, SGD
 import random
-from torchmetrics import ROC, F1Score
-from pytorch_metric_learning.losses import ArcFaceLoss
+from torchmetrics import ROC
+from pytorch_metric_learning.losses import ArcFaceLoss, CosFaceLoss
 import torch.distributed as dist
 from sklearn.metrics import f1_score
 
@@ -26,17 +26,16 @@ class LightningWrapper(L.LightningModule):
         self.automatic_optimization = False
         self.current_objective = "embed_fc"
 
-        self.task_codes = {"embed_fc": 0, "class_fc": 1,
+        self.task_codes = {"head": 0,
                            "gender_fc": 10, "hair_fc": 11, "glasses_fc": 12, "mustache_fc": 13, "hat_fc": 14,
                            "open_mouth_fc": 15, "long_hair_fc": 16}
-        self.task_weights = {"embed_fc": 0.7, "class_fc": 0.3,
+        self.task_weights = {"head": 1.0,
                              "gender_fc": 0., "hair_fc": 0., "glasses_fc": 0., "mustache_fc": 0.,
                              "hat_fc": 0.0, "open_mouth_fc": 0., "long_hair_fc": 0.}
         self.task_rng = random.Random(412)
 
         self.val_sims = []
         self.val_gts = []
-        self.f1_score = F1Score(task="binary")
         self.roc = ROC(task="binary")
 
     def _configure_custom_criterions(self):
@@ -49,7 +48,7 @@ class LightningWrapper(L.LightningModule):
             self.open_mouth_criterion = torch.nn.BCEWithLogitsLoss()
             self.long_hair_criterion = torch.nn.BCEWithLogitsLoss()
 
-        self.embed_criterion = ArcFaceLoss(self.num_classes, self.config.embedding_size)
+        self.embed_criterion = CosFaceLoss(self.num_classes, self.config.embedding_size)
         self.classification_criterion = torch.nn.CrossEntropyLoss()
 
     def forward(self, x):
@@ -70,7 +69,8 @@ class LightningWrapper(L.LightningModule):
                 break
 
     def training_step(self, batch, batch_idx):
-        self.switch_random_task()
+        # CAUTION: Do not use this function until fixed.
+        # self.switch_random_task()
 
         model_opt, crit_opt = self.optimizers()
         model_sched, crit_sched = self.lr_schedulers()
@@ -114,32 +114,30 @@ class LightningWrapper(L.LightningModule):
         elif self.current_objective == "class_fc":
             loss = self.classification_criterion(out["class"], gt["class"])
         else:
-            loss = self.embed_criterion(out["embedding"], gt["class"])
+            loss = self.config.embedding_loss_rate * self.embed_criterion(out["embedding"], gt["class"])
+            loss += (1 - self.config.embedding_loss_rate) * self.classification_criterion(out["class"], gt["class"])
 
         return loss
 
     def unfreeze_layer(self, target):
-        layers = {name: module for name, module in self.model.named_modules() if '.' not in name}
+        layers = {name: module for name, module in self.model.named_modules() if '.' not in name or 'head.' in name}
         layers.pop('backbone')
+        layers.pop('head')
         layers.pop('')
 
         for name in layers:
-            if name == "head":
-                if "embed_fc" in target:
-                    layers[name].embed_fc.weight.requires_grad_(True)
-                    layers[name].class_fc.weight.requires_grad_(False)
-                else:
-                    layers[name].embed_fc.weight.requires_grad_(False)
-                    layers[name].class_fc.weight.requires_grad_(True)
+            if name in target:
+                print("Turning on", name)
+                layers[name].weight.requires_grad_(True)
             else:
-                if name in target:
-                    layers[name].weight.requires_grad_(True)
-                else:
-                    layers[name].weight.requires_grad_(False)
+                print("Turning off", name)
+                layers[name].weight.requires_grad_(False)
 
-        if "embed_fc" in target:
+        if "head" in target:
+            print("Turning on head")
             self.embed_criterion.W.requires_grad_(True)
         else:
+            print("Turning off head")
             self.embed_criterion.W.requires_grad_(False)
 
     def validation_step(self, batch, _):
@@ -176,10 +174,15 @@ class LightningWrapper(L.LightningModule):
         return all_outputs, all_targets
 
     def on_validation_epoch_end(self):
-        all_outputs, all_targets = self.gather_results()
+        if dist.is_initialized():
+            all_outputs, all_targets = self.gather_results()
+        else:
+            all_outputs = torch.tensor(self.val_sims).to(self.device)
+            all_targets = torch.tensor(self.val_gts).to(self.device)
+
         f1, threshold, tpr = 0., 0., 0.
 
-        if dist.get_rank() == 0:
+        if not dist.is_initialized() or dist.get_rank() == 0:
             fpr, tpr, thresholds = self.roc(all_outputs, all_targets)
 
             indexes = torch.tensor([True if rate <= 1e-3 else False for rate in fpr])
@@ -203,15 +206,13 @@ class LightningWrapper(L.LightningModule):
 
     def configure_optimizers(self):
         model_optimizer = AdamW(self.model.parameters(), lr=self.config.max_model_lr)
-        criterion_optimizer = SGD(self.embed_criterion.parameters(), lr=self.config.max_crit_lr)
+        criterion_optimizer = AdamW(self.embed_criterion.parameters(), lr=self.config.max_crit_lr)
 
         total_batches = self.config.num_of_epoch * self.num_batches
-        warmup_period = int(self.config.warmup_epochs * self.num_batches)
+        warmup_period = int(max(self.config.warmup_epochs * self.num_batches, 1))
 
-        model_warmup = lr_scheduler.LinearLR(model_optimizer, start_factor=self.config.min_model_lr / 2,
-                                             total_iters=warmup_period)
-        criterion_warmup = lr_scheduler.LinearLR(criterion_optimizer, start_factor=self.config.min_crit_lr / 2,
-                                                 total_iters=warmup_period)
+        model_warmup = lr_scheduler.LinearLR(model_optimizer, start_factor=1.0, end_factor=1.0, total_iters=warmup_period)
+        criterion_warmup = lr_scheduler.LinearLR(criterion_optimizer, start_factor=1.0, end_factor=1.0, total_iters=warmup_period)
         model_scheduler = lr_scheduler.CosineAnnealingLR(model_optimizer, total_batches // 5, self.config.min_model_lr)
         criterion_scheduler = lr_scheduler.CosineAnnealingLR(criterion_optimizer, total_batches // 5, self.config.min_crit_lr)
 
