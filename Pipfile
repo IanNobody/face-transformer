@@ -15,6 +15,7 @@ eer = "*"
 transformers = "*"
 lightning = "*"
 mxnet = "*"
+wandb = "*"
 
 [dev-packages]
 

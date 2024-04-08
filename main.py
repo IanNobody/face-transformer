@@ -1,6 +1,6 @@
 import argparse
+import gc
 import torch
-
 import os
 import glob
 
@@ -9,31 +9,27 @@ from models.lightning_wrapper import LightningWrapper
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
 
-from torch.utils.data import DataLoader, ConcatDataset
-from pytorch_metric_learning import losses
-import torchvision.transforms as T
+from torch.utils.data import DataLoader
 import albumentations as alb
 
 from data.dataset_factory import build_train_dataset, build_eval_dataset
 from models.model_factory import build_model
-
-
 from train_utils.train_config import build_config
-from verification.metrics import Metrics
-from pytorch_lightning.loggers import TensorBoardLogger
-import gc
 import wandb
 from pytorch_lightning.loggers import WandbLogger
 
+from verification.metrics import test_and_print
+
 torch.set_float32_matmul_precision('medium')
 
-wandb.init(
-    project="face_transformer",
-    config={
-        "architecture": "OpenCLIP",
-        "dataset": "MS1Mv3",
-    }
-)
+def init_training_wandb(config, project_name):
+    wandb.init(
+        project=project_name,
+        config={
+            "architecture": config.model_name,
+            "dataset": config.dataset_name,
+        }
+    )
 
 def start_training(model, dataloader, val_dataloader, config, classes):
     if config.weights_file_path is not None:
@@ -46,14 +42,15 @@ def start_training(model, dataloader, val_dataloader, config, classes):
                                            num_batches=len(dataloader) / len(config.devices))
     checkpointer = ModelCheckpoint(
         dirpath=config.checkpoints_dir,
+        save_top_k=-1,
         filename='checkpoint-{epoch:02d}-{loss:.2f}-{acc:.2f}'
     )
     wandb_logger = WandbLogger(project='face_transformer')
     trainer = Trainer(max_epochs=config.num_of_epoch,
                       logger=wandb_logger,
-                      overfit_batches=30,
                       callbacks=[checkpointer],
-                      strategy='ddp_find_unused_parameters_true',
+                      #overfit_batches=200,
+                      #strategy='ddp_find_unused_parameters_true',
                       accelerator="auto", devices=config.devices)
     trainer.fit(lightning_model, dataloader, val_dataloader)
     print("Training successfully finished.")
@@ -93,6 +90,7 @@ def create_argument_parser():
     parser.add_argument("--model", type=str, help="Model selection")
     parser.add_argument("--dataset", type=str, help="Dataset selection")
     parser.add_argument("--eval", action="store_true", help="Evaluate the model on the dataset")
+    parser.add_argument("--hyper", action="store_true", help="Starts hyperparameters testing")
     parser.add_argument("--data_path", type=str, help="Path to the dataset directory")
     parser.add_argument("--annotation_dir", type=str, help="Path to the files list")
     parser.add_argument("--checkpoint_count", type=int, help="Number of checkpoints to keep", default=50)
@@ -119,24 +117,47 @@ if __name__ == '__main__':
     model = build_model(args.model, 512, number_of_classes)
 
     if not args.eval:
-        train_dataloader = DataLoader(train_dataset, batch_size=configuration.batch_size, shuffle=True, num_workers=6)
-        print_config_sumup(configuration, args, train_dataset)
-        start_training(model, train_dataloader, eval_dataloader, configuration, number_of_classes)
-    # else:
-        # search_pattern = os.path.join(configuration.checkpoint_path, '**', '*.ckpt')
-    #     for idx, ckpt_file in enumerate(sorted(glob.glob(search_pattern, recursive=True))):
-    #         configuration.device = torch.device("cuda:"+str(args.gpu[0]))
-    #         # model = MultitaskOpenCLIP(None, 8631)
-    #         model = OpenCLIPWrapper(100000)
-    #         # crit = losses.ArcFaceLoss(8631, embedding_size)
-    #         crit = losses.ArcFaceLoss(100000, 512)
-    #         model = LightningWrapper.load_from_checkpoint(ckpt_file, model=model, config=configuration, criterion=crit, map_location=configuration.device)
-    #         model.eval()
-    #         metrics = Metrics(model, dataloader, configuration)
-    #         print("Checking file: ", ckpt_file)
-    #         metrics.test_and_print(args.output_dir, idx)
-    #         del model
-    #         del metrics
-    #         gc.collect()
-    #         torch.cuda.empty_cache()
+        if not args.hyper:
+            init_training_wandb(configuration, "face_transformer_cosface_adamw")
+            train_dataloader = DataLoader(train_dataset, batch_size=configuration.batch_size, shuffle=True, num_workers=6)
+            print_config_sumup(configuration, args, train_dataset)
+            start_training(model, train_dataloader, eval_dataloader, configuration, number_of_classes)
+        else:
+            for config in configuration.generate_all_permutations():
+                wandb.init(
+                    reinit=True,
+                    project="face_transformer_hyperparams_study-cosface",
+                    name="e" + str(config.embedding_size) + "_r" + str(config.embedding_loss_rate)
+                         + "_m" + str(config.max_model_lr) + "_c" + str(config.max_crit_lr),
+                    config={
+                        "architecture": "OpenCLIP",
+                        "dataset": "MS1Mv3",
+                        "min_model_lr": config.min_model_lr,
+                        "max_model_lr": config.max_model_lr,
+                        "min_crit_lr": config.min_crit_lr,
+                        "max_crit_lr": config.max_crit_lr,
+                        "embedding_size": config.embedding_size,
+                        "embedding_loss_rate": config.embedding_loss_rate
+                    }
+                )
+                model = build_model(args.model, config.embedding_size, number_of_classes)
+                train_dataloader = DataLoader(train_dataset, batch_size=configuration.batch_size, shuffle=True, num_workers=6)
+                start_training(model, train_dataloader, eval_dataloader, config, number_of_classes)
+                wandb.finish()
+    else:
+        search_pattern = os.path.join(configuration.weights_file_path, '**', '*.ckpt')
+        for idx, ckpt_file in enumerate(sorted(glob.glob(search_pattern, recursive=True))):
+            configuration.device = torch.device("cuda:"+str(args.gpu[0]))
+            lightning_model = LightningWrapper.load_from_checkpoint(
+                ckpt_file, model=model,
+                config=configuration,
+                num_classes=number_of_classes,
+                map_location=configuration.device
+            )
+
+            print("Checking file: ", ckpt_file)
+            test_and_print(model, eval_dataloader, configuration.device, args.output_dir, idx)
+            del lightning_model
+            gc.collect()
+            torch.cuda.empty_cache()
 
