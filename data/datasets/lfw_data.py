@@ -21,6 +21,7 @@ class LFWDataset(Dataset):
         diff_face_pairs = diff_face_pairs[:min_size]
         self.pairs = np.concatenate((same_face_pairs, diff_face_pairs), axis=0)
         self.labels = np.concatenate((np.ones(len(same_face_pairs)), np.zeros(len(diff_face_pairs))), axis=0)
+        self.labels = torch.tensor(self.labels)
 
         self.transform = transform
         self.device = device
