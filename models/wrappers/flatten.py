@@ -1,11 +1,12 @@
 from torch.nn import Module
 from models.head import EmbeddingHead
 from models.Flatten_T.flatten_swin import FLattenSwinTransformer
+from models.wrappers.wrapper import Wrapper
 
 
-class FLattenWrapper(Module):
+class FLattenWrapper(Wrapper):
     def __init__(self, embedding_size, num_classes):
-        super(FLattenWrapper, self).__init__()
+        super(FLattenWrapper, self).__init__(embedding_size, num_classes)
         self.backbone = FLattenSwinTransformer(num_classes=num_classes)
         self.backbone.head = EmbeddingHead(self.backbone.head.in_features, embedding_size, num_classes)
 

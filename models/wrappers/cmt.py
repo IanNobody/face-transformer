@@ -1,11 +1,12 @@
 from torch.nn import Module
 from models.head import EmbeddingHead
 from models.CMT.cmt import cmt_b
+from models.wrappers.wrapper import Wrapper
 
 
-class CMTWrapper(Module):
+class CMTWrapper(Wrapper):
     def __init__(self, embedding_size, num_classes):
-        super(CMTWrapper, self).__init__()
+        super(CMTWrapper, self).__init__(embedding_size, num_classes)
         self.backbone = cmt_b(num_classes=num_classes)
         self.backbone.embed_fc = EmbeddingHead(self.backbone.embed_fc.in_features, embedding_size, num_classes)
 

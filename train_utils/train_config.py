@@ -11,7 +11,8 @@ def build_config(args):
         checkpoints_dir=args.checkpoints_dir,
         weights_file_path=args.weights_file_path,
         batch_size=args.batch_size,
-        num_of_epoch=args.num_epoch
+        num_of_epoch=args.num_epoch,
+        old_weights=args.backbone_only
     )
 
 class TrainingConfiguration:
@@ -30,7 +31,8 @@ class TrainingConfiguration:
                  max_crit_lr=1e-2,
                  embedding_size=512,
                  embedding_loss_rate=0.85,
-                 warmup_epochs=10):
+                 warmup_epochs=10,
+                 backbone_only=False):
         self.model_name = model_name
         self.dataset_name = dataset_name
         self.devices = devices
@@ -47,6 +49,7 @@ class TrainingConfiguration:
         self.embedding_size = embedding_size
         self.embedding_loss_rate = embedding_loss_rate
         self.warmup_epochs = warmup_epochs
+        self.backbone_only = backbone_only
 
     def sane_lr_values(self):
         return [1e-4, 1e-2, 1e-1]

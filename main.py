@@ -114,7 +114,7 @@ if __name__ == '__main__':
                                  num_workers=8, collate_fn=LFWDataset.collate_fn)
 
     number_of_classes = train_dataset.num_classes()
-    model = build_model(args.model, 512, number_of_classes)
+    model = build_model(configuration, 512, number_of_classes)
 
     if not args.eval:
         if not args.hyper:

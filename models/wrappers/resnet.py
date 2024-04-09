@@ -1,11 +1,12 @@
 from torch.nn import Module
 from models.head import EmbeddingHead
 from torchvision.models import resnet50
+from models.wrappers.wrapper import Wrapper
 
 
-class ResNet50Wrapper(Module):
+class ResNet50Wrapper(Wrapper):
     def __init__(self, embedding_size, num_classes):
-        super(ResNet50Wrapper, self).__init__()
+        super(ResNet50Wrapper, self).__init__(embedding_size, num_classes)
         self.backbone = resnet50()
         self.backbone.head = EmbeddingHead(self.backbone.head.in_features, embedding_size, num_classes)
 
