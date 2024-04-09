@@ -8,7 +8,7 @@ import open_clip
 def build_train_dataset(dataset_name, data_dir, annotation_path, augmentation):
     dataset = None
 
-    if dataset_name == "vggface2":
+    if dataset_name in ["vggface2", "vggface", "vgg"]:
         dataset = VGGFaceDataset(
             data_dir,
             annotation_path,
