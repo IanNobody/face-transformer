@@ -140,7 +140,7 @@ if __name__ == '__main__':
                         "embedding_loss_rate": config.embedding_loss_rate
                     }
                 )
-                model = build_model(args.model, config.embedding_size, number_of_classes)
+                model = build_model(config, config.embedding_size, number_of_classes)
                 train_dataloader = DataLoader(train_dataset, batch_size=configuration.batch_size, shuffle=True, num_workers=6)
                 start_training(model, train_dataloader, eval_dataloader, config, number_of_classes)
                 wandb.finish()
