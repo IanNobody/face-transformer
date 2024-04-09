@@ -1,7 +1,6 @@
 import pytorch_lightning as L
 import torch
 from torch.optim import lr_scheduler, AdamW, SGD
-import random
 from torchmetrics import ROC
 from pytorch_metric_learning.losses import ArcFaceLoss, CosFaceLoss
 import torch.distributed as dist
@@ -21,43 +20,33 @@ class LightningWrapper(L.LightningModule):
         self.num_classes = num_classes
 
         self.model = model
-        self._configure_custom_criterions()
-
+        self._configure_criterions()
         self.automatic_optimization = False
-        self.current_objective = "embed_fc"
-
-        self.task_codes = {"head": 0,
-                           "gender_fc": 10, "hair_fc": 11, "glasses_fc": 12, "mustache_fc": 13, "hat_fc": 14,
-                           "open_mouth_fc": 15, "long_hair_fc": 16}
-        self.task_weights = {"head": 1.0,
-                             "gender_fc": 0., "hair_fc": 0., "glasses_fc": 0., "mustache_fc": 0.,
-                             "hat_fc": 0.0, "open_mouth_fc": 0., "long_hair_fc": 0.}
-        self.task_rng = random.Random(412)
 
         self.val_sims = []
         self.val_gts = []
         self.roc = ROC(task="binary")
 
-    def _configure_custom_criterions(self):
+    def _configure_criterions(self):
         if "multitask" in self.config.model_name:
-            self.hair_color_criterion = torch.nn.CrossEntropyLoss()
-            self.glasses_criterion = torch.nn.CrossEntropyLoss()
-            self.gender_criterion = torch.nn.BCEWithLogitsLoss()
-            self.mustache_criterion = torch.nn.BCEWithLogitsLoss()
-            self.hat_criterion = torch.nn.BCEWithLogitsLoss()
-            self.open_mouth_criterion = torch.nn.BCEWithLogitsLoss()
-            self.long_hair_criterion = torch.nn.BCEWithLogitsLoss()
+            self.task_criterions = {
+                "gender_fc": torch.nn.BCEWithLogitsLoss(),
+                "hair_fc": torch.nn.CrossEntropyLoss(),
+                "glasses_fc": torch.nn.CrossEntropyLoss(),
+                "mustache_fc": torch.nn.BCEWithLogitsLoss(),
+                "hat_fc": torch.nn.BCEWithLogitsLoss(),
+                "open_mouth_fc": torch.nn.BCEWithLogitsLoss(),
+                "long_hair_fc": torch.nn.BCEWithLogitsLoss()
+            }
 
         self.embed_criterion = CosFaceLoss(self.num_classes, self.config.embedding_size)
-        self.classification_criterion = torch.nn.CrossEntropyLoss()
+        self.class_criterion = torch.nn.CrossEntropyLoss()
 
-    def forward(self, x):
-        return self.model(x)
-
-    def switch_task_by_layer_name(self, layer_name):
-        self.current_objective = layer_name
-        self.unfreeze_layer([layer_name])
-        self.log("obj", self.task_codes[layer_name], prog_bar=True)
+    def forward(self, x, text_prompt=None):
+        if "multitask" in self.config.model_name:
+            return self.model(x, text_prompt)
+        else:
+            return self.model(x)
 
     def switch_random_task(self):
         rand = self.task_rng.random()
@@ -70,7 +59,7 @@ class LightningWrapper(L.LightningModule):
 
     def training_step(self, batch, batch_idx):
         # CAUTION: Do not use this function until fixed.
-        # self.switch_random_task()
+        self.model.switch_random_task()
 
         model_opt, crit_opt = self.optimizers()
         model_sched, crit_sched = self.lr_schedulers()
@@ -78,7 +67,8 @@ class LightningWrapper(L.LightningModule):
         x = batch["data"]
         gt = batch["annotation"]
 
-        out = self(x)
+        if "multitask" in self.config.model_name:
+            out = self(x["image"], x["textual_prompt"])
         loss = self._loss(out, gt)
         self.manual_backward(loss)
 
@@ -97,48 +87,21 @@ class LightningWrapper(L.LightningModule):
         return loss
 
     def _loss(self, out, gt):
-        if self.current_objective == "gender_fc":
-            loss = self.gender_criterion(out["gender"], gt["gender"])
-        elif self.current_objective == "hair_fc":
-            loss = self.hair_color_criterion(out["hair"], gt["hair"])
-        elif self.current_objective == "glasses_fc":
-            loss = self.glasses_criterion(out["glasses"], gt["glasses"])
-        elif self.current_objective == "mustache_fc":
-            loss = self.mustache_criterion(out["mustache"], gt["mustache"])
-        elif self.current_objective == "hat_fc":
-            loss = self.hat_criterion(out["hat"], gt["hat"])
-        elif self.current_objective == "open_mouth_fc":
-            loss = self.open_mouth_criterion(out["open_mouth"], gt["open_mouth"])
-        elif self.current_objective == "long_hair_fc":
-            loss = self.long_hair_criterion(out["long_hair"], gt["long_hair"])
-        elif self.current_objective == "class_fc":
-            loss = self.classification_criterion(out["class"], gt["class"])
+        loss = self.config.embedding_loss_rate * self.embed_criterion(out["embedding"], gt["class"])
+
+        if "multitask" in self.config.model_name:
+            task_out = out[self.model.active_task_layer[:-3]]
+            task_gt = gt[self.model.active_task_layer[:-3]]
+            task_rate = 1 - self.config.embedding_loss_rate
+
+            if self.model.active_task_layer == "class_fc":
+                loss += task_rate * self.class_criterion(task_out, task_gt)
+            else:
+                loss += task_rate * self.task_criterions[self.model.active_task_layer](task_out, task_gt)
         else:
-            loss = self.config.embedding_loss_rate * self.embed_criterion(out["embedding"], gt["class"])
-            loss += (1 - self.config.embedding_loss_rate) * self.classification_criterion(out["class"], gt["class"])
+            loss += (1 - self.config.embedding_loss_rate) * self.class_criterion(out["class"], gt["class"])
 
         return loss
-
-    def unfreeze_layer(self, target):
-        layers = {name: module for name, module in self.model.named_modules() if '.' not in name or 'head.' in name}
-        layers.pop('backbone')
-        layers.pop('head')
-        layers.pop('')
-
-        for name in layers:
-            if name in target:
-                print("Turning on", name)
-                layers[name].weight.requires_grad_(True)
-            else:
-                print("Turning off", name)
-                layers[name].weight.requires_grad_(False)
-
-        if "head" in target:
-            print("Turning on head")
-            self.embed_criterion.W.requires_grad_(True)
-        else:
-            print("Turning off head")
-            self.embed_criterion.W.requires_grad_(False)
 
     def validation_step(self, batch, _):
         img1 = batch["img1"]
@@ -179,8 +142,6 @@ class LightningWrapper(L.LightningModule):
         else:
             all_outputs = torch.tensor(self.val_sims).to(self.device)
             all_targets = torch.tensor(self.val_gts).to(self.device)
-
-        f1, threshold, tpr = 0., 0., 0.
 
         if not dist.is_initialized() or dist.get_rank() == 0:
             fpr, tpr, thresholds = self.roc(all_outputs, all_targets)
