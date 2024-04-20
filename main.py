@@ -18,7 +18,7 @@ from train_utils.train_config import build_config
 import wandb
 from pytorch_lightning.loggers import WandbLogger
 
-from verification.metrics import test_and_print
+from verification.metrics import test_dir
 
 torch.set_float32_matmul_precision('medium')
 
@@ -114,9 +114,10 @@ if __name__ == '__main__':
                                  num_workers=8, collate_fn=LFWDataset.collate_fn)
 
     number_of_classes = train_dataset.num_classes()
-    model = build_model(configuration, 512, number_of_classes)
 
     if not args.eval:
+        model = build_model(configuration, 512, number_of_classes)
+
         if not args.hyper:
             init_training_wandb(configuration, "face_transformer_cosface_adamw")
             train_dataloader = DataLoader(train_dataset, batch_size=configuration.batch_size, shuffle=True, num_workers=6)
@@ -145,19 +146,7 @@ if __name__ == '__main__':
                 start_training(model, train_dataloader, eval_dataloader, config, number_of_classes)
                 wandb.finish()
     else:
-        search_pattern = os.path.join(configuration.weights_file_path, '**', '*.ckpt')
-        for idx, ckpt_file in enumerate(sorted(glob.glob(search_pattern, recursive=True))):
-            configuration.device = torch.device("cuda:"+str(args.gpu[0]))
-            lightning_model = LightningWrapper.load_from_checkpoint(
-                ckpt_file, model=model,
-                config=configuration,
-                num_classes=number_of_classes,
-                map_location=configuration.device
-            )
-
-            print("Checking file: ", ckpt_file)
-            test_and_print(model, eval_dataloader, configuration.device, args.output_dir, idx)
-            del lightning_model
-            gc.collect()
-            torch.cuda.empty_cache()
-
+        path = args.weights_file_path
+        configuration.weights_file_path = None
+        model = build_model(configuration, 512, number_of_classes)
+        test_dir(path, configuration, model, number_of_classes, eval_dataloader, args.output_dir)
