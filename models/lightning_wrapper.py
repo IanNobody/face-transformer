@@ -5,7 +5,7 @@ from torchmetrics import ROC
 from pytorch_metric_learning.losses import ArcFaceLoss, CosFaceLoss
 import torch.distributed as dist
 from sklearn.metrics import f1_score
-
+from models.CLIP.clip_loss import ClipLoss
 
 def _similarity(x, y):
     return torch.dot(x, y) / (torch.linalg.norm(x) * torch.linalg.norm(y))
@@ -40,6 +40,7 @@ class LightningWrapper(L.LightningModule):
             }
 
         self.embed_criterion = CosFaceLoss(self.num_classes, self.config.embedding_size)
+        self.clip_criterion = ClipLoss()
         self.class_criterion = torch.nn.CrossEntropyLoss()
 
     def forward(self, x, text_prompt=None):
@@ -48,18 +49,9 @@ class LightningWrapper(L.LightningModule):
         else:
             return self.model(x)
 
-    def switch_random_task(self):
-        rand = self.task_rng.random()
-        for task in self.task_weights:
-            if rand > self.task_weights[task]:
-                rand -= self.task_weights[task]
-            else:
-                self.switch_task_by_layer_name(task)
-                break
-
     def training_step(self, batch, batch_idx):
-        # CAUTION: Do not use this function until fixed.
-        self.model.switch_random_task()
+        if "multitask" in self.config.model_name:
+            self.model.switch_random_task(self.device)
 
         model_opt, crit_opt = self.optimizers()
         model_sched, crit_sched = self.lr_schedulers()
@@ -69,6 +61,9 @@ class LightningWrapper(L.LightningModule):
 
         if "multitask" in self.config.model_name:
             out = self(x["image"], x["textual_prompt"])
+        else:
+            out = self(x)
+
         loss = self._loss(out, gt)
         self.manual_backward(loss)
 
@@ -100,6 +95,9 @@ class LightningWrapper(L.LightningModule):
                 loss += task_rate * self.task_criterions[self.model.active_task_layer](task_out, task_gt)
         else:
             loss += (1 - self.config.embedding_loss_rate) * self.class_criterion(out["class"], gt["class"])
+
+        if "clip" in self.config.model_name:
+            loss = loss * 0.8 + 0.2 * self.clip_criterion(out["raw"][0], out["raw"][1], out["raw"][2])
 
         return loss
 

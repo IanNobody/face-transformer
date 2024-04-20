@@ -22,56 +22,59 @@ class MultitaskOpenCLIPWrapper(Wrapper):
 
         self.task_random = random.Random(412)
         self.active_task_layer = "class_fc"
-        # self.task_probabilities = {
-        #     "class_fc": 0.3, "gender_fc": 0.2, "hair_fc": 0.15, "glasses_fc": 0.05, "mustache_fc": 0.15,
-        #     "hat_fc": 0.05, "open_mouth_fc": 0.05, "long_hair_fc": 0.05
-        # }
         self.task_probabilities = {
-            "class_fc": 0.125, "gender_fc": 0.125, "hair_fc": 0.125, "glasses_fc": 0.125, "mustache_fc": 0.125,
-            "hat_fc": 0.125, "open_mouth_fc": 0.125, "long_hair_fc": 0.125
+            "class_fc": 0.3, "gender_fc": 0.2, "hair_fc": 0.15, "glasses_fc": 0.05, "mustache_fc": 0.15,
+            "hat_fc": 0.05, "open_mouth_fc": 0.05, "long_hair_fc": 0.05
         }
+        # self.task_probabilities = {
+        #     "class_fc": 0.6, "gender_fc": 0.25, "hair_fc": 0.05, "glasses_fc": 0.05, "mustache_fc": 0.05,
+        #     "hat_fc": 0.0, "open_mouth_fc": 0.0, "long_hair_fc": 0.0
+        # }
 
     def forward(self, x, text_prompt):
-        y = self.backbone(text=text_prompt, image=x)[0]
+        y = self.backbone(text=text_prompt, image=x)
 
-        rec = self.recognition_head(y)
-        gender = self.gender_fc(y).squeeze()
-        hair = self.hair_fc(y)
-        glasses = self.glasses_fc(y)
-        mustache = self.mustache_fc(y).squeeze()
-        hat = self.hat_fc(y).squeeze()
-        open_mouth = self.open_mouth_fc(y).squeeze()
-        long_hair = self.long_hair_fc(y).squeeze()
+        rec = self.recognition_head(y[0])
+
+        embed = rec["embedding"]
+        gender = self.gender_fc(embed).squeeze()
+        hair = self.hair_fc(embed)
+        glasses = self.glasses_fc(embed)
+        mustache = self.mustache_fc(embed).squeeze()
+        hat = self.hat_fc(embed).squeeze()
+        open_mouth = self.open_mouth_fc(embed).squeeze()
+        long_hair = self.long_hair_fc(embed).squeeze()
 
         return {
-            "embedding": rec["embedding"], "class": rec["class"], "gender": gender, "hair": hair,
+            "embedding": embed, "class": rec["class"], "gender": gender, "hair": hair,
             "glasses": glasses, "mustache": mustache, "hat": hat, "open_mouth": open_mouth,
-            "long_hair": long_hair
+            "long_hair": long_hair, "raw": y
         }
 
-    def _switch_task_by_layer_name(self, layer_name):
+    def _switch_task_by_layer_name(self, layer_name, device):
         self.active_task_layer = layer_name
 
         for name, param in self.named_parameters():
             if name.startswith(layer_name):
                 param.requires_grad_(True)
-                print(name, end=", ")
-            else:
+            elif self._is_task_layer(name):
                 param.requires_grad_(False)
-                print("<", name, ">", end=", ")
 
-    def switch_random_task(self):
+    def _is_task_layer(self, name):
+        return True if "class_fc" in name else any(name.startswith(task) for task in self.task_probabilities.keys())
+
+    def switch_random_task(self, device):
         rand = self.task_random.random()
         for task_name in self.task_probabilities.keys():
             if rand > self.task_probabilities[task_name]:
                 rand -= self.task_probabilities[task_name]
             else:
-                print("Picked ", task_name)
-                self._switch_task_by_layer_name(task_name)
+                self._switch_task_by_layer_name(task_name, device)
                 break
 
     def load_backbone_weights(self, path):
-        weights = torch.load(path, map_location='cpu')["state_dict"]
-        backbone_weights = {k: v for k, v in weights.items() if k.startswith('model.backbone')}
-        self.backbone.load_state_dict(backbone_weights, strict=False)
+        if path is not None:
+            weights = torch.load(path, map_location='cpu')["state_dict"]
+            backbone_weights = {k: v for k, v in weights.items() if k.startswith('model.backbone')}
+            self.backbone.load_state_dict(backbone_weights, strict=False)
 
