@@ -1,5 +1,6 @@
-from models.wrappers import swin, resnet, flatten, smt, biformer, cmt, noisy_vit, openclip, multitask_openclip#, dat
-import torch
+from models.wrappers import swin, resnet, flatten, smt, biformer, cmt, noisy_vit, openclip, multitask_openclip, old_multitask_openclip#, dat
+from models.wrappers.old_openclip import OldOpenCLIPWrapper
+
 
 def build_model(config, embedding_size, num_of_classes):
     model = None
@@ -22,10 +23,14 @@ def build_model(config, embedding_size, num_of_classes):
         model = noisy_vit.NoisyViTWrapper(embedding_size, num_of_classes)
     elif config.model_name == "openclip":
         model = openclip.OpenCLIPVisionWrapper(embedding_size, num_of_classes)
+    elif config.model_name == "old_openclip":
+        model = OldOpenCLIPWrapper(embedding_size, num_of_classes)
     elif config.model_name == "multitask_openclip":
         model = multitask_openclip.MultitaskOpenCLIPWrapper(embedding_size, num_of_classes)
+    elif config.model_name == "old_multitask_openclip":
+        model = old_multitask_openclip.OldMultitaskOpenCLIPWrapper(embedding_size, num_of_classes)
 
-    if config.old_weights:
+    if config.old_checkpoint_format:
         model.load_backbone_weights(config.weights_file_path)
 
     return model

@@ -32,7 +32,7 @@ def init_training_wandb(config, project_name):
     )
 
 def start_training(model, dataloader, val_dataloader, config, classes):
-    if config.weights_file_path is not None:
+    if config.weights_file_path is not None and not config.old_checkpoint_format:
         lightning_model = LightningWrapper.load_from_checkpoint(config.weights_file_path, model=model, config=config,
                                                                 num_classes=classes,
                                                                 num_batches=len(dataloader) / len(config.devices),
@@ -50,7 +50,7 @@ def start_training(model, dataloader, val_dataloader, config, classes):
                       logger=wandb_logger,
                       callbacks=[checkpointer],
                       #overfit_batches=200,
-                      #strategy='ddp_find_unused_parameters_true',
+                      strategy='ddp_find_unused_parameters_true',
                       accelerator="auto", devices=config.devices)
     trainer.fit(lightning_model, dataloader, val_dataloader)
     print("Training successfully finished.")
@@ -96,6 +96,7 @@ def create_argument_parser():
     parser.add_argument("--checkpoint_count", type=int, help="Number of checkpoints to keep", default=50)
     parser.add_argument("--checkpoints_dir", type=str, help="Path where to save checkpoints", default="./")
     parser.add_argument("--weights_file_path", type=str, help="Path to weights file", default=None)
+    parser.add_argument("--old_format", action="store_true", help="Load checkpoints in old format")
     parser.add_argument("-b", "--batch_size", type=int, help="Batch size", default=32)
     parser.add_argument("-e", "--num_epoch", type=int, help="Number of epochs", default=50)
     parser.add_argument("--gpu", nargs='+', type=int, help="Which GPU unit to use (default is 0)", default=0)
@@ -119,7 +120,7 @@ if __name__ == '__main__':
         model = build_model(configuration, 512, number_of_classes)
 
         if not args.hyper:
-            init_training_wandb(configuration, "face_transformer_cosface_adamw")
+            init_training_wandb(configuration, "multitask_face_transformer")
             train_dataloader = DataLoader(train_dataset, batch_size=configuration.batch_size, shuffle=True, num_workers=6)
             print_config_sumup(configuration, args, train_dataset)
             start_training(model, train_dataloader, eval_dataloader, configuration, number_of_classes)
@@ -127,11 +128,11 @@ if __name__ == '__main__':
             for config in configuration.generate_all_permutations():
                 wandb.init(
                     reinit=True,
-                    project="face_transformer_hyperparams_study-cosface",
+                    project="multitask_face_transformer",
                     name="e" + str(config.embedding_size) + "_r" + str(config.embedding_loss_rate)
                          + "_m" + str(config.max_model_lr) + "_c" + str(config.max_crit_lr),
                     config={
-                        "architecture": "OpenCLIP",
+                        "architecture": "CLIP",
                         "dataset": "MS1Mv3",
                         "min_model_lr": config.min_model_lr,
                         "max_model_lr": config.max_model_lr,
