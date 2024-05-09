@@ -93,7 +93,7 @@ def create_argument_parser():
     parser.add_argument("--hyper", action="store_true", help="Starts hyperparameters testing")
     parser.add_argument("--data_path", type=str, help="Path to the dataset directory")
     parser.add_argument("--annotation_dir", type=str, help="Path to the files list")
-    parser.add_argument("--checkpoint_count", type=int, help="Number of checkpoints to keep", default=50)
+    parser.add_argument("--checkpoint_count", type=int, help="Number of checkpoints to keep", default=-1)
     parser.add_argument("--checkpoints_dir", type=str, help="Path where to save checkpoints", default="./")
     parser.add_argument("--weights_file_path", type=str, help="Path to weights file", default=None)
     parser.add_argument("--old_format", action="store_true", help="Load checkpoints in old format")
