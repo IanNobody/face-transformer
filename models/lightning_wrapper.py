@@ -6,6 +6,8 @@ from pytorch_metric_learning.losses import ArcFaceLoss, CosFaceLoss
 import torch.distributed as dist
 from sklearn.metrics import f1_score
 from models.CLIP.clip_loss import ClipLoss
+from models.adaface import AdaFace
+
 
 def _similarity(x, y):
     return torch.dot(x, y) / (torch.linalg.norm(x) * torch.linalg.norm(y))
@@ -62,7 +64,10 @@ class LightningWrapper(L.LightningModule):
         if "multitask" in self.config.model_name:
             out = self(x["image"], x["textual_prompt"])
         else:
-            out = self(x)
+            if isinstance(x, dict):
+                out = self(x["image"])
+            else:
+                out = self(x)
 
         loss = self._loss(out, gt)
         self.manual_backward(loss)
@@ -96,7 +101,7 @@ class LightningWrapper(L.LightningModule):
         else:
             loss += (1 - self.config.embedding_loss_rate) * self.class_criterion(out["class"], gt["class"])
 
-        if "clip" in self.config.model_name:
+        if "clip" in self.config.model_name and "multitask" in self.config.model_name:
             loss = loss * 0.8 + 0.2 * self.clip_criterion(out["raw"][0], out["raw"][1], out["raw"][2])
 
         return loss
