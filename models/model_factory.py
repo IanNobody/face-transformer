@@ -1,4 +1,4 @@
-from models.wrappers import swin, resnet, flatten, smt, biformer, cmt, noisy_vit, openclip, multitask_openclip, old_multitask_openclip#, dat
+from models.wrappers import swin, resnet, flatten, smt, biformer, cmt, noisy_vit, openclip, multitask_openclip, old_multitask_openclip, old_swin
 from models.wrappers.old_openclip import OldOpenCLIPWrapper
 
 
@@ -25,6 +25,8 @@ def build_model(config, embedding_size, num_of_classes):
         model = openclip.OpenCLIPVisionWrapper(embedding_size, num_of_classes)
     elif config.model_name == "old_openclip":
         model = OldOpenCLIPWrapper(embedding_size, num_of_classes)
+    elif config.model_name == "old_swin":
+        model = old_swin.OldSWINWrapper(embedding_size, num_of_classes)
     elif config.model_name == "multitask_openclip":
         model = multitask_openclip.MultitaskOpenCLIPWrapper(embedding_size, num_of_classes)
     elif config.model_name == "old_multitask_openclip":
