@@ -11,17 +11,8 @@ class LFWDataset(Dataset):
     def __init__(self, transform=None, device=None):
         lfw_pairs = fetch_lfw_pairs(color=True, funneled=True)
 
-        pairs = lfw_pairs.pairs
-        labels = lfw_pairs.target
-
-        same_face_pairs = pairs[labels == 1]
-        diff_face_pairs = pairs[labels == 0]
-        min_size = min(len(same_face_pairs), len(diff_face_pairs))
-        same_face_pairs = same_face_pairs[:min_size]
-        diff_face_pairs = diff_face_pairs[:min_size]
-        self.pairs = np.concatenate((same_face_pairs, diff_face_pairs), axis=0)
-        self.labels = np.concatenate((np.ones(len(same_face_pairs)), np.zeros(len(diff_face_pairs))), axis=0)
-        self.labels = torch.tensor(self.labels)
+        self.pairs = lfw_pairs.pairs
+        self.labels = lfw_pairs.target
 
         self.transform = transform
         self.device = device
@@ -30,7 +21,6 @@ class LFWDataset(Dataset):
         return len(self.pairs)
 
     def __getitem__(self, idx):
-        idx = random.randint(0, len(self.pairs) - 1)
         img1 = (self.pairs[idx][0] * 255).astype(np.uint8)
         img2 = (self.pairs[idx][1] * 255).astype(np.uint8)
 
