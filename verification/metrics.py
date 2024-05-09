@@ -12,6 +12,7 @@ import numpy as np
 import bisect
 import random
 
+from pytorch_metric_learning.distances.cosine_similarity import CosineSimilarity
 from models.lightning_wrapper import LightningWrapper
 
 DETAILED = False
@@ -21,6 +22,8 @@ torch.manual_seed(SEED)
 np.random.seed(SEED)
 random.seed(SEED)
 
+distance = CosineSimilarity()
+
 def _generate_roc(similarities, labels):
     fpr, tpr, thresholds = roc_curve(labels, similarities, drop_intermediate=False)
     roc_auc = auc(fpr, tpr)
@@ -29,13 +32,6 @@ def _generate_roc(similarities, labels):
 
 def _get_best_threshold(fpr, tpr, thresholds):
     return thresholds[np.nanargmin(np.abs(fpr - (1 - tpr)))]
-
-
-def _similarity(embedding1, embedding2):
-    embedding1_magnitude = numpy.linalg.norm(embedding1)
-    embedding2_magnitude = numpy.linalg.norm(embedding2)
-    cosine_similarity = numpy.dot(embedding1, embedding2) / (embedding1_magnitude * embedding2_magnitude)
-    return cosine_similarity
 
 
 def _run_stats(model, dataloader, device):
@@ -52,7 +48,7 @@ def _run_stats(model, dataloader, device):
             embedding1 = model(img1)["embedding"].cpu()
             embedding2 = model(img2)["embedding"].cpu()
 
-        similarity = [_similarity(em1, em2) for em1, em2 in zip(embedding1, embedding2)]
+        similarity = [distance(em1.unsqueeze(0), em2.unsqueeze(0))[0].item() for em1, em2 in zip(embedding1, embedding2)]
         similarities.extend(similarity)
         labels.extend(label)
 
@@ -75,22 +71,18 @@ def _detailed_roc_curve(labels, scores, num_thresholds=10000):
     fpr = []
 
     for thresh in thresholds:
-        # Predicted positives/negatives
         pred_pos = scores >= thresh
         pred_neg = ~pred_pos
 
-        # True positives and false positives
         tp = np.sum([label == 1 and pred for label, pred in zip(labels, pred_pos)])
         fp = np.sum([label == 0 and pred for label, pred in zip(labels, pred_pos)])
 
-        # False negatives and true negatives
         fn = np.sum([label == 1 and pred for label, pred in zip(labels, pred_neg)])
         tn = np.sum([label == 0 and pred for label, pred in zip(labels, pred_neg)])
 
         _tpr = tp / (tp + fn) if (tp + fn) != 0 else 0
         _fpr = fp / (fp + tn) if (fp + tn) != 0 else 0
 
-        # Calculate TPR and FPR
         tpr.append(_tpr)
         fpr.append(_fpr)
 
@@ -98,11 +90,17 @@ def _detailed_roc_curve(labels, scores, num_thresholds=10000):
 
 
 def test_dir(dir, config, model, number_of_classes, eval_dataloader, output_dir):
-    search_pattern = os.path.join(dir, "**", '*.pth' if config.old_checkpoint_format else '*.ckpt')
     device = torch.device("cuda:" + str(config.devices[0]))
     f1s, accuracys, max_accuracys, eer_scores, thresholds = [], [], [], [], []
 
-    for idx, ckpt_file in enumerate(sorted(glob.glob(search_pattern, recursive=True))):
+    if dir.endswith(".pth") or dir.endswith(".ckpt"):
+        checkpoint_files = [dir]
+    else:
+        pattern_ckpt = os.path.join(dir, "**", '*.ckpt')
+        pattern_pth = os.path.join(dir, "**", '*.pth')
+        checkpoint_files = sorted(glob.glob(pattern_ckpt, recursive=True) + glob.glob(pattern_pth, recursive=True))
+
+    for idx, ckpt_file in enumerate(checkpoint_files):
         print("----------------------------")
         print("Checking file: ", ckpt_file)
 
@@ -143,7 +141,7 @@ def test_and_print(model, dataloader, device, output_dir, index):
     best_threshold = _get_best_threshold(fpr, tpr, thresholds)
     f1, accuracy, eer_score = _f1_accuracy_eer(similarities, labels, best_threshold)
 
-    _print_all_tar_at_far(fpr, tpr)
+    _print_all_tar_at_far(fpr, tpr, thresholds)
     _print_stats(f1, accuracy, eer_score, best_threshold)
 
     _plot_far_frr(fpr, tpr, thresholds, eer_score, os.path.join(output_dir, "far_frr-" + str(index) + ".png"))
@@ -242,7 +240,6 @@ def _plot_far_frr(fpr, tpr, thresholds, eer, path):
     plt.xlabel('Threshold')
     plt.ylabel('Rate')
     plt.legend()
-    plt.ylim([0, 1])
     plt.xlim([0, 1])
     plt.title('FAR and FRR curves for EER')
     plt.grid(True)
@@ -257,13 +254,13 @@ def _print_stats(f1, accuracy, eer_score, best_threshold):
     print("Optimal threshold:", best_threshold)
 
 
-def _print_tar_at_far(fpr, tpr, far_rate):
+def _print_tar_at_far(fpr, tpr, thresholds, far_rate):
     index = bisect.bisect_left(fpr, far_rate) - 1
-    print("> TAR(%)@FAR=" + str(far_rate) + ":", tpr[index])
+    print("> TAR(%)@FAR=" + str(far_rate) + ":", tpr[index], " at threshold:", thresholds[index])
 
 
-def _print_all_tar_at_far(fpr, tpr):
+def _print_all_tar_at_far(fpr, tpr, thresholds):
     for i in range(2, 7):
-        _print_tar_at_far(fpr, tpr, 10 ** (-i))
+        _print_tar_at_far(fpr, tpr, thresholds, 10 ** (-i))
 
 
