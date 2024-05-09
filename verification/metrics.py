@@ -1,7 +1,9 @@
+# Author: Šimon Strýček
+# Description: Tools for testing face recognition models using ROC, EER, F1 and accuracy metrics.
+# Year: 2024
+
 import gc
 import glob
-
-import numpy
 import torch
 from sklearn.metrics import roc_curve, auc
 import matplotlib.pyplot as plt
