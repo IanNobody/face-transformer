@@ -135,14 +135,24 @@ def test_dir(dir, config, model, number_of_classes, eval_dataloader, output_dir)
     _plot_stats(f1s, max_accuracys, eer_scores, thresholds, output_dir)
     return f1s, accuracys, max_accuracys, eer_scores, thresholds
 
+
+def get_gt_sims(model):
+    # Get CosFace loss embeddings from weights layer
+    embeddings = model.embed_criterion.W.detach().cpu()
+    similarities = [distance(em1.unsqueeze(0), em2.unsqueeze(0))[0] for em1 in embeddings for em2 in embeddings]
+    return similarities
+
 def test_and_print(model, dataloader, device, output_dir, index):
     similarities, labels = _run_stats(model, dataloader, device)
     fpr, tpr, thresholds, roc_auc = _generate_roc(similarities, labels)
     best_threshold = _get_best_threshold(fpr, tpr, thresholds)
     f1, accuracy, eer_score = _f1_accuracy_eer(similarities, labels, best_threshold)
+    loss_sims = get_gt_sims(model)
 
     _print_all_tar_at_far(fpr, tpr, thresholds)
     _print_stats(f1, accuracy, eer_score, best_threshold)
+    print("AVG SIM: ", np.mean(similarities), "STD SIM: ", np.std(similarities))
+    print("AVG LOSS SIM: ", np.mean(loss_sims), "STD LOSS SIM: ", np.std(loss_sims))
 
     _plot_far_frr(fpr, tpr, thresholds, eer_score, os.path.join(output_dir, "far_frr-" + str(index) + ".png"))
     if DETAILED:
