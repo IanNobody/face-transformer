@@ -1,3 +1,7 @@
+# Author: Šimon Strýček
+# Description: Inference speed testing script for SWIN and Flatten models.
+# Year: 2024
+
 from models.model_factory import build_model
 from train_utils.train_config import TrainingConfiguration
 import torch

@@ -1,3 +1,7 @@
+# Author: Šimon Strýček
+# Description: Configuration for training/testing scripts.
+# Year: 2024
+
 import copy
 import itertools
 

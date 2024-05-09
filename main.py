@@ -1,14 +1,14 @@
+# Author: Šimon Strýček
+# Description: Main script for training and testing face recognition models.
+# Year: 2024
+
 import argparse
-import gc
 import torch
-import os
-import glob
 
 from data.datasets.lfw_data import LFWDataset
 from models.lightning_wrapper import LightningWrapper
 from pytorch_lightning import Trainer
 from pytorch_lightning.callbacks import ModelCheckpoint
-
 from torch.utils.data import DataLoader
 import albumentations as alb
 
@@ -17,7 +17,6 @@ from models.model_factory import build_model
 from train_utils.train_config import build_config
 import wandb
 from pytorch_lightning.loggers import WandbLogger
-
 from verification.metrics import test_dir
 
 torch.set_float32_matmul_precision('medium')
@@ -113,7 +112,6 @@ if __name__ == '__main__':
     eval_dataset = build_eval_dataset(None)
     eval_dataloader = DataLoader(eval_dataset, batch_size=configuration.batch_size, shuffle=False,
                                  num_workers=8, collate_fn=LFWDataset.collate_fn)
-
     number_of_classes = train_dataset.num_classes()
 
     if not args.eval:
