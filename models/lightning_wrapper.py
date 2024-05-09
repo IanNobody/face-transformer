@@ -1,3 +1,7 @@
+# Author: Šimon Strýček
+# Description: PyTorch Lightning wrapper for training the models.
+# Year: 2024
+
 import pytorch_lightning as L
 import torch
 from torch.optim import lr_scheduler, AdamW, SGD

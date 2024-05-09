@@ -5,6 +5,10 @@
 # Vision Transformer with Deformable Attention
 # Modified by Zhuofan Xia 
 # --------------------------------------------------------
+# This file was taken from the original DAT repository.
+# Implementation URL: https://github.com/LeapLabTHU/DAT
+# Paper URL: https://arxiv.org/pdf/2201.00520
+# --------------------------------------------------------
 
 import torch
 import torch.nn as nn

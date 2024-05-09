@@ -1,4 +1,7 @@
-from torch.nn import Module
+# Author: Šimon Strýček
+# Description: Wrapper for NoisyViT model.
+# Year: 2024
+
 from models.head import EmbeddingHead
 from models.NoisyViT.noisy_vit import vit_b
 from models.wrappers.wrapper import Wrapper

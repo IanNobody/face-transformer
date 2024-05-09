@@ -1,3 +1,7 @@
+# Author: Šimon Strýček
+# Description: Wrapper for OpenCLIP model with multitask learning.
+# Year: 2024
+
 import random
 import torch
 import torch.nn as nn

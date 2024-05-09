@@ -1,3 +1,7 @@
+# Author: Šimon Strýček
+# Description: Factory for creating models based on the configuration.
+# Year: 2024
+
 from models.wrappers import swin, resnet, flatten, smt, biformer, cmt, noisy_vit, openclip, multitask_openclip, old_multitask_openclip, old_swin
 from models.wrappers.old_openclip import OldOpenCLIPWrapper
 

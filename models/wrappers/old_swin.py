@@ -1,5 +1,7 @@
-from torch.nn import Module
-from models.head import EmbeddingHead
+# Author: Šimon Strýček
+# Description: Wrapper for backward compatibility with old Swin Transformer variants.
+# Year: 2024
+
 from torchvision.models import swin_t
 from models.wrappers.wrapper import Wrapper
 import torch.nn as nn

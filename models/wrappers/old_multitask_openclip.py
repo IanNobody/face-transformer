@@ -1,9 +1,12 @@
+# Author: Šimon Strýček
+# Description: Wrapper for backward compatibility with old multitask OpenCLIP variants.
+# Year: 2024
+
 import random
 import torch
 import torch.nn as nn
 from models.wrappers.wrapper import Wrapper
 from open_clip import create_model
-from models.head import EmbeddingHead
 
 
 class OldMultitaskOpenCLIPWrapper(Wrapper):

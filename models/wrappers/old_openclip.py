@@ -1,3 +1,7 @@
+# Author: Šimon Strýček
+# Description: Wrapper for backward compatibility with old OpenCLIP vision model variants.
+# Year: 2024
+
 from transformers import CLIPModel
 import torch.nn as nn
 import torch

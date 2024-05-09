@@ -1,3 +1,10 @@
+# Authors: Xiaowei Yu, Yao Xue, Lu Zhang, Li Wang, Tianming Liu, Dajiang Zhu
+# Description: Implementation of the NoisyViT model.
+#
+# This file was taken from the original NoisyViT repository.
+# Implementation URL: https://github.com/kytimmylai/NoisyNN-PyTorch
+# Paper URL: https://arxiv.org/pdf/2309.10625v2
+
 """ NoisyNN in PyTorch
 
 'NoisyNN: Exploring the Influence of Information Entropy Change in Learning Systems'

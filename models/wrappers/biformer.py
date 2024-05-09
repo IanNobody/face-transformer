@@ -1,4 +1,7 @@
-from torch.nn import Module
+# Author: Šimon Strýček
+# Description: Wrapper for the BiFormer model.
+# Year: 2024
+
 from models.head import EmbeddingHead
 from models.BiFormer.biformer import biformer_base
 from models.wrappers.wrapper import Wrapper

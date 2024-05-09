@@ -1,4 +1,7 @@
-from torch.nn import Module
+# Author: Šimon Strýček
+# Description: Wrapper for Swin Transformer model.
+# Year: 2024
+
 from models.head import EmbeddingHead
 from torchvision.models import swin_t
 from models.wrappers.wrapper import Wrapper

@@ -1,6 +1,11 @@
 # 2022.06.28-Changed for building CMT
 #            Huawei Technologies Co., Ltd. <foss@huawei.com>
 # Author: Jianyuan Guo (jyguo@pku.edu.cn)
+# --------------------------------------------------------
+# This file was taken from the original CMT repository.
+# Implementation URL: https://github.com/FlyEgle/CMT-pytorch
+# Paper URL: https://arxiv.org/pdf/2107.06263
+# --------------------------------------------------------
 
 import math
 import logging

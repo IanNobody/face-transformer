@@ -3,6 +3,10 @@
 # Copyright (c) 2021 Microsoft
 # Licensed under The MIT License [see LICENSE for details]
 # Written by Ze Liu
+#
+# This file was taken from the original FLatten-Transformer repository.
+# Implementation URL: https://github.com/LeapLabTHU/FLatten-Transformer
+# Paper URL: https://arxiv.org/pdf/2308.00442
 # --------------------------------------------------------
 
 import torch

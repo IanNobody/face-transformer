@@ -1,3 +1,7 @@
+# Author: Šimon Strýček
+# Description: General wrapper class for models. All wrapper models should inherit from this class.
+# Year: 2024
+
 import torch.nn as nn
 
 class Wrapper(nn.Module):

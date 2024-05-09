@@ -1,4 +1,7 @@
-from torch.nn import Module
+# Author: Šimon Strýček
+# Description: Wrapper for OpenCLIP vision model
+# Year: 2024
+
 from models.head import EmbeddingHead
 from open_clip import create_model
 from models.wrappers.wrapper import Wrapper

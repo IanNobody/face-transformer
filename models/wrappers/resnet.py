@@ -1,4 +1,7 @@
-from torch.nn import Module
+# Author: Šimon Strýček
+# Description: Wrapper for the ResNet50 model.
+# Year: 2024
+
 from models.head import EmbeddingHead
 from torchvision.models import resnet50
 from models.wrappers.wrapper import Wrapper

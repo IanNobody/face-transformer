@@ -9,6 +9,8 @@ email: ray.leizhu@outlook.com
 
 This source code is licensed under the license found in the
 LICENSE file in the root directory of this source tree.
+
+This file was taken from the original BiFormer repository.
 """
 from typing import Tuple
 

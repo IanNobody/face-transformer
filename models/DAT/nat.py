@@ -25,6 +25,10 @@
 # Modified by Zhuofan Xia
 # Originated from https://github.com/SHI-Labs/NATTEN/blob/main/src/natten/natten2d.py
 # --------------------------------------------------------
+# This file was taken from the original DAT repository.
+# Implementation URL: https://github.com/LeapLabTHU/DAT
+# Paper URL: https://arxiv.org/pdf/2201.00520
+# --------------------------------------------------------
 
 import torch
 from torch import nn

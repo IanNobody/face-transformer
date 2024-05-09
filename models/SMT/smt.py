@@ -1,3 +1,10 @@
+# Authors: Weifeng Lin, Ziheng Wu, Jiayu Chen, Jun Huang, Lianwen Jin
+# Description: Implementation of the SMT model.
+#
+# This file was taken from the original SMT repository.
+# Implementation URL: https://github.com/AFeng-x/SMT
+# Paper URL: https://arxiv.org/pdf/2307.08579
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

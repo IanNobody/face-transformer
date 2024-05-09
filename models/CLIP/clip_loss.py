@@ -1,3 +1,9 @@
+# Description: Implementation of the contrastive Clip loss by LAION.
+#
+# This file was taken from the original LAION repository.
+# Implementation URL: https://github.com/mlfoundations/open_clip
+# Paper URL: https://arxiv.org/pdf/2212.07143
+
 import torch
 import torch.nn as nn
 from torch.nn import functional as F

@@ -1,4 +1,7 @@
-from torch.nn import Module
+# Author: Šimon Strýček
+# Description: Wrapper for the SMT model.
+# Year: 2024
+
 from models.head import EmbeddingHead
 from models.SMT.smt import SMT
 from models.wrappers.wrapper import Wrapper

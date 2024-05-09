@@ -1,4 +1,7 @@
-from torch.nn import Module
+# Author: Šimon Strýček
+# Description: Wrapper for the FLatten Swin transformer model
+# Year: 2024
+
 from models.head import EmbeddingHead
 from models.Flatten_T.flatten_swin import FLattenSwinTransformer
 from models.wrappers.wrapper import Wrapper

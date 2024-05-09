@@ -1,4 +1,7 @@
-from torch.nn import Module
+# Author: Šimon Strýček
+# Description: Wrapper for the CMT model.
+# Year: 2024
+
 from models.head import EmbeddingHead
 from models.CMT.cmt import cmt_b
 from models.wrappers.wrapper import Wrapper

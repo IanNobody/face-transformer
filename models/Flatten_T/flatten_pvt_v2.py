@@ -1,3 +1,10 @@
+# Authors: Dongchen Han, Xuran Pan, Yizeng Han, Shiji Song, Gao Huang
+# Description: Key implementation of FLatten transformer.
+#
+# This file was taken from the original FLatten-Transformer repository.
+# Implementation URL: https://github.com/LeapLabTHU/FLatten-Transformer
+# Paper URL: https://arxiv.org/pdf/2308.00442
+
 import torch
 import torch.nn as nn
 import torch.nn.functional as F

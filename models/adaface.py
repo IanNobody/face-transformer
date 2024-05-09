@@ -1,5 +1,11 @@
-import math
+# Authors: Minchul Kim, Anil K. Jain, Xiaoming Liu
+# Description: Implementation of the AdaFace loss function.
+#
+# This file was taken from the original AdaFace repository.
+# Implementation URL: https://github.com/mk-minchul/AdaFace
+# Paper URL: https://arxiv.org/pdf/2204.00964
 
+import math
 from torch.nn import Module, Parameter, CrossEntropyLoss
 import torch
 

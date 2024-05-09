@@ -1,3 +1,7 @@
+# This file was taken from the original BiFormer repository.
+# Implementation URL: https://github.com/rayleizhu/BiFormer
+# Paper URL: https://arxiv.org/pdf/2303.08810
+
 import torch
 import torch.nn as nn
 from einops import rearrange

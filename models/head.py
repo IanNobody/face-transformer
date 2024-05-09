@@ -1,3 +1,7 @@
+# Author: Šimon Strýček
+# Description: Implementation of the embedding/classification head.
+# Year: 2024
+
 from torch.nn import Module, Linear
 
 
